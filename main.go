@@ -13,7 +13,6 @@ import (
 
 var store *Store
 
-// deneme
 func main() {
 	err := godotenv.Load()
 	if err != nil {
