@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/boltdb/bolt"
 )
 
 type Store struct {
-	db *bolt.DB
+	db              *bolt.DB
+	moviesBucketKey []byte
 }
 
 func NewStore() (*Store, error) {
@@ -18,8 +18,22 @@ func NewStore() (*Store, error) {
 		return nil, err
 	}
 
+	moviesBucketKey := []byte("Movies")
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(moviesBucketKey)
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Store{
-		db: db,
+		db:              db,
+		moviesBucketKey: moviesBucketKey,
 	}, nil
 }
 
@@ -27,58 +41,41 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) AddMovie(movie string) (bool, error) {
-	movie = strings.ToLower(movie) // Ensure movie name is in lowercase
-	alreadyExists := false
-
-	err := s.db.Update(func(tx *bolt.Tx) error {
-		moviesBucket, err := tx.CreateBucketIfNotExists([]byte("Movies"))
-		if err != nil {
-			return err
-		}
+func (s *Store) AddMovie(movie string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
 
 		movieBucket := moviesBucket.Bucket([]byte(movie))
 		if movieBucket != nil {
-			alreadyExists = true // The movie bucket already exists
-			return nil
+			return fmt.Errorf("this movie already exists")
 		}
 
-		_, err = moviesBucket.CreateBucket([]byte(movie)) // Create new bucket if not exists
+		_, err := moviesBucket.CreateBucket([]byte(movie))
 		return err
 	})
-
-	return alreadyExists, err
 }
 
 func (s *Store) AddScore(movie string, score float64, userID string) error {
-	movie = strings.ToLower(movie) // Convert movie name to lowercase
 	return s.db.Update(func(tx *bolt.Tx) error {
-		moviesBucket := tx.Bucket([]byte("Movies"))
-		if moviesBucket == nil {
-			return fmt.Errorf("movies bucket does not exist")
-		}
-		// Create or retrieve the movie bucket
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+
 		movieBucket, err := moviesBucket.CreateBucketIfNotExists([]byte(movie))
 		if err != nil {
 			return fmt.Errorf("failed to create or get movie bucket for '%s': %s", movie, err)
 		}
-		scoreString := fmt.Sprintf("%.2f", score)
+
+		scoreString := fmt.Sprintf("%.1f", score)
 		return movieBucket.Put([]byte(userID), []byte(scoreString))
 	})
 }
 
 func (s *Store) GetScores(movie string) (map[string]float64, float64, error) {
-	movie = strings.ToLower(movie) // Convert movie name to lowercase
 	scores := make(map[string]float64)
 	var totalScore float64
 	var count float64
 
 	err := s.db.View(func(tx *bolt.Tx) error {
-		moviesBucket := tx.Bucket([]byte("Movies"))
-		if moviesBucket == nil {
-			return fmt.Errorf("movies bucket does not exist")
-		}
-
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
 		movieBucket := moviesBucket.Bucket([]byte(movie))
 		if movieBucket == nil {
 			return fmt.Errorf("no scores available for '%s'", movie)
@@ -105,6 +102,7 @@ func (s *Store) GetScores(movie string) (map[string]float64, float64, error) {
 	if count > 0 {
 		average = totalScore / count
 	}
+
 	return scores, average, nil
 }
 
