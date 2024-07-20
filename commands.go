@@ -7,78 +7,230 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type CommandFunc = func(s *discordgo.Session, m *discordgo.MessageCreate, content string)
+type CommandFunc = func(s *discordgo.Session, i *discordgo.InteractionCreate)
 
-func AddMovie(s *discordgo.Session, m *discordgo.MessageCreate, content string) {
-	movieName := SanitiseMovieName(content)
+func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
 
-	if err := store.AddMovie(movieName); err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Failed to add movie: "+err.Error())
-		return
-	}
+		movieName := strings.TrimSpace(data.Options[0].StringValue())
+		score := data.Options[1].FloatValue()
+		comment := data.Options[2].StringValue()
 
-	s.ChannelMessageSend(m.ChannelID, "Movie added successfully: "+movieName)
-}
+		author := InteractionAuthor(i.Interaction)
 
-func ScoreMovie(s *discordgo.Session, m *discordgo.MessageCreate, content string) {
-	firstSpace := strings.Index(content, " ")
-	if firstSpace == -1 {
-		s.ChannelMessageSend(m.ChannelID, "Usage: /score [score] [movie name]")
-		return
-	}
-
-	scoreStr, movieName := content[:firstSpace], strings.TrimSpace(content[firstSpace+1:])
-
-	score, err := ValidateScore(scoreStr)
-	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, err.Error())
-		return
-	}
-
-	movieName = SanitiseMovieName(movieName)
-
-	if err = store.AddScore(movieName, score, m.Author.ID); err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Failed to add score: "+err.Error())
-		return
-	}
-
-	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Score of %.1f added successfully for '%s'", score, movieName))
-}
-
-func FetchMovie(s *discordgo.Session, m *discordgo.MessageCreate, content string) {
-	movieName := SanitiseMovieName(content)
-
-	scores, average, err := store.GetScores(movieName)
-	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Error retrieving scores: "+err.Error())
-		return
-	}
-
-	if len(scores) == 0 {
-		s.ChannelMessageSend(m.ChannelID, "No scores available for '"+movieName+"'")
-		return
-	}
-
-	// Build the response message
-	response := fmt.Sprintf("%s %.1f\n---------------\n", movieName, average)
-	for userID, score := range scores {
-		user, err := s.User(userID) // Fetch user details
-		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "Failed to retrieve user details for ID: "+userID)
-			continue
+		if err := store.AddReview(movieName, &Review{
+			AuthorID: author.ID,
+			Score:    score,
+			Comment:  comment,
+		}); err != nil {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: fmt.Sprintf("Review could not be added: %s", err.Error()),
+				},
+			})
+			return
 		}
-		username := user.Username // Get the username
-		response += fmt.Sprintf("%s %.1f\n", username, score)
-	}
 
-	s.ChannelMessageSend(m.ChannelID, response)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("**%s** reviewed ``%s`` ``%.1f``\n```%s```", author.Username, movieName, score, comment),
+				//Content: fmt.Sprintf("A review added for the movie **``%s``** by **%s:** ``(%.1f)``  **-** ``\"%s\"`` ", movieName, i.Interaction.Member.Nick, score, comment),
+			},
+		})
+
+		break
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		data := i.ApplicationCommandData()
+		if !data.Options[0].Focused {
+			return
+		}
+
+		choices := []*discordgo.ApplicationCommandOptionChoice{}
+
+		name := strings.TrimSpace(data.Options[0].StringValue())
+
+		if name != "" {
+			// Timer ekle, saniyede 1 arama
+			names, err := SearchMovies(name)
+			if err == nil {
+				for _, name := range names {
+					choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+						Name:  name,
+						Value: name,
+					})
+				}
+			}
+		}
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+			Data: &discordgo.InteractionResponseData{
+				Choices: choices,
+			},
+		})
+	}
 }
 
-func ClearDB(s *discordgo.Session, m *discordgo.MessageCreate, content string) {
-	// Ensure the command issuer has admin privileges
-	if err := store.ClearAllData(); err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Failed to clear database: "+err.Error())
-	} else {
-		s.ChannelMessageSend(m.ChannelID, "Database cleared successfully.")
+func MovieCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
+
+		movieName := strings.TrimSpace(data.Options[0].StringValue())
+
+		reviews, avg, err := store.GetReviews(movieName)
+		if err != nil {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: fmt.Sprintf("Reviews could not be fetched: %s", err.Error()),
+				},
+			})
+			return
+		}
+
+		result := fmt.Sprintf("# %s ``[%.1f]``\n", movieName, avg)
+
+		for _, review := range reviews {
+			user, err := s.User(review.AuthorID)
+			if err != nil {
+				continue
+			}
+			result += fmt.Sprintf("- **%s** **``(%.1f)``** - ``\"%s\"``\n", user.Username, review.Score, review.Comment)
+		}
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: result,
+			},
+		})
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		data := i.ApplicationCommandData()
+		if !data.Options[0].Focused {
+			return
+		}
+
+		choices := []*discordgo.ApplicationCommandOptionChoice{}
+
+		name := strings.TrimSpace(data.Options[0].StringValue())
+
+		names, err := store.SearchMovies(name)
+		if err == nil {
+			for _, name := range names {
+				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+					Name:  name,
+					Value: name,
+				})
+			}
+		}
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+			Data: &discordgo.InteractionResponseData{
+				Choices: choices,
+			},
+		})
+	}
+}
+
+func GetMoviesCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		movies, averages, err := store.GetMovies()
+		if err != nil {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: fmt.Sprintf("Movies could not be fetched: %s", err.Error()),
+				},
+			})
+			return
+		}
+
+		result := ""
+
+		for i, movieName := range movies {
+			result += fmt.Sprintf("- **%s** ``%.1f``\n", movieName, averages[i])
+		}
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: result,
+			},
+		})
+	}
+}
+
+func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
+
+		movieName := strings.TrimSpace(data.Options[0].StringValue())
+		author := InteractionAuthor(i.Interaction)
+
+		err := store.DeleteReview(movieName, author.ID)
+		if err != nil {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: fmt.Sprintf("Review could not be deleted: %s", err.Error()),
+				},
+			})
+			return
+		}
+
+		movieDeleted := false
+		count, err := store.GetReviewCount(movieName)
+		if err == nil && count == 0 {
+			err = store.DeleteMovie(movieName)
+			if err == nil {
+				movieDeleted = true
+			}
+		}
+
+		result := "Review deleted successfuly."
+		if movieDeleted {
+			result += "\nMovie has been deleted because no review left."
+		}
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: result,
+			},
+		})
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		data := i.ApplicationCommandData()
+		if !data.Options[0].Focused {
+			return
+		}
+
+		choices := []*discordgo.ApplicationCommandOptionChoice{}
+
+		name := strings.TrimSpace(data.Options[0].StringValue())
+
+		names, err := store.SearchMovies(name)
+		if err == nil {
+			for _, name := range names {
+				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+					Name:  name,
+					Value: name,
+				})
+			}
+		}
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+			Data: &discordgo.InteractionResponseData{
+				Choices: choices,
+			},
+		})
 	}
 }

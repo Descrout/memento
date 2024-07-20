@@ -1,8 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"github.com/boltdb/bolt"
 )
@@ -41,54 +42,120 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) AddMovie(movie string) error {
+func (s *Store) AddReview(movieName string, review *Review) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
 
-		movieBucket := moviesBucket.Bucket([]byte(movie))
-		if movieBucket != nil {
-			return fmt.Errorf("this movie already exists")
-		}
-
-		_, err := moviesBucket.CreateBucket([]byte(movie))
-		return err
-	})
-}
-
-func (s *Store) AddScore(movie string, score float64, userID string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
-		moviesBucket := tx.Bucket(s.moviesBucketKey)
-
-		movieBucket, err := moviesBucket.CreateBucketIfNotExists([]byte(movie))
+		movieBucket, err := moviesBucket.CreateBucketIfNotExists([]byte(movieName))
 		if err != nil {
-			return fmt.Errorf("failed to create or get movie bucket for '%s': %s", movie, err)
+			return fmt.Errorf("failed to create or get movie bucket for '%s': %s", movieName, err)
 		}
 
-		scoreString := fmt.Sprintf("%.1f", score)
-		return movieBucket.Put([]byte(userID), []byte(scoreString))
+		rawReview, err := json.Marshal(review)
+		if err != nil {
+			return err
+		}
+
+		return movieBucket.Put([]byte(review.AuthorID), rawReview)
 	})
 }
 
-func (s *Store) GetScores(movie string) (map[string]float64, float64, error) {
-	scores := make(map[string]float64)
-	var totalScore float64
-	var count float64
-
+func (s *Store) GetMovies() ([]string, []float64, error) {
+	movies := []string{}
+	averages := []float64{}
 	err := s.db.View(func(tx *bolt.Tx) error {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
-		movieBucket := moviesBucket.Bucket([]byte(movie))
-		if movieBucket == nil {
-			return fmt.Errorf("no scores available for '%s'", movie)
-		}
 
-		err := movieBucket.ForEach(func(k, v []byte) error {
-			score, err := strconv.ParseFloat(string(v), 64)
+		err := moviesBucket.ForEach(func(k, v []byte) error {
+			movieBucket := moviesBucket.Bucket(k)
+			totalScore := float64(0)
+			count := 0
+			err := movieBucket.ForEach(func(k, v []byte) error {
+				review := &Review{}
+				err := json.Unmarshal(v, review)
+				if err != nil {
+					return err
+				}
+
+				totalScore += review.Score
+				count++
+				return nil
+			})
 			if err != nil {
 				return err
 			}
-			scores[string(k)] = score
-			totalScore += score
-			count++
+			var avg float64 = 0
+			if count > 0 {
+				avg = totalScore / float64(count)
+			}
+			averages = append(averages, avg)
+			movies = append(movies, string(k))
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return movies, averages, nil
+}
+
+func (s *Store) SearchMovies(search string) ([]string, error) {
+	movies := []string{}
+	search = strings.ToLower(strings.TrimSpace(search))
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+
+		err := moviesBucket.ForEach(func(k, v []byte) error {
+			mv := string(k)
+
+			if strings.Contains(strings.ToLower(mv), search) && len(movies) < 5 {
+				movies = append(movies, mv)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return movies, nil
+}
+
+func (s *Store) GetReviews(movie string) ([]*Review, float64, error) {
+	var totalScore float64
+	reviews := []*Review{}
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+
+		movieBucket := moviesBucket.Bucket([]byte(movie))
+
+		err := movieBucket.ForEach(func(k, v []byte) error {
+			review := &Review{}
+			err := json.Unmarshal(v, review)
+			if err != nil {
+				return err
+			}
+			reviews = append(reviews, review)
+
+			totalScore += review.Score
+
 			return nil
 		})
 		return err
@@ -98,12 +165,76 @@ func (s *Store) GetScores(movie string) (map[string]float64, float64, error) {
 		return nil, 0, err
 	}
 
-	var average float64
+	average := float64(0)
+	count := float64(len(reviews))
 	if count > 0 {
 		average = totalScore / count
 	}
 
-	return scores, average, nil
+	return reviews, average, nil
+}
+
+func (s *Store) GetReviewCount(movie string) (int, error) {
+	var count int = 0
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+		movieBucket := moviesBucket.Bucket([]byte(movie))
+		err := movieBucket.ForEach(func(k, v []byte) error {
+			count++
+			return nil
+		})
+		return err
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+func (s *Store) DeleteMovie(movie string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+
+		movieBucket := moviesBucket.Bucket([]byte(movie))
+		if movieBucket == nil {
+			return fmt.Errorf("this movie did not exists")
+		}
+
+		return tx.DeleteBucket([]byte(movie))
+	})
+}
+
+func (s *Store) DeleteReview(movie string, authorID string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+
+		movieBucket := moviesBucket.Bucket([]byte(movie))
+		if movieBucket == nil {
+			return fmt.Errorf("this movie did not exists")
+		}
+
+		deleted := false
+
+		err := movieBucket.ForEach(func(k, v []byte) error {
+			if string(k) == authorID {
+				deleted = true
+			}
+			return nil
+		})
+		if err != nil {
+			return nil
+		}
+
+		if !deleted {
+			return fmt.Errorf("you did not review this movie before")
+		}
+
+		return movieBucket.Delete([]byte(authorID))
+
+	})
 }
 
 func (s *Store) ClearAllData() error {
