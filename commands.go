@@ -252,3 +252,67 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 }
+
+func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
+
+		movieName := strings.TrimSpace(data.Options[0].StringValue())
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		})
+
+		examination, err := GeminiRequestMovieExaminationFast(movieName)
+		if err != nil {
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
+			})
+		} else {
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: examination,
+			})
+		}
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		data := i.ApplicationCommandData()
+		if !data.Options[0].Focused {
+			return
+		}
+
+		name := strings.TrimSpace(data.Options[0].StringValue())
+
+		author := InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		debounce(func() {
+			names := []string{}
+			namesReviewed, err := store.SearchMovies(name)
+			if err == nil {
+				names = append(names, namesReviewed...)
+			}
+
+			diff := 8 - len(names)
+			if diff > 0 {
+				namesTmdb, err := SearchMovies(name, diff)
+				if err == nil {
+					names = append(names, namesTmdb...)
+				}
+			}
+
+			choices := []*discordgo.ApplicationCommandOptionChoice{}
+			for _, name := range names {
+				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+					Name:  name,
+					Value: name,
+				})
+			}
+
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{
+					Choices: choices,
+				},
+			})
+		})
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/google/generative-ai-go/genai"
 )
 
 func InteractionAuthor(i *discordgo.Interaction) *discordgo.User {
@@ -70,6 +72,33 @@ func SearchMovies(query string, searchCount int) ([]string, error) {
 	return titlesWithDetails, nil
 }
 
+func GeminiRequestMovieExaminationFast(movieName string) (string, error) {
+	model := geminiClient.GenerativeModel("gemini-1.5-flash")
+	cs := model.StartChat()
+
+	resp, err := cs.SendMessage(context.Background(), genai.Text(movieName+" filmi hakkında ne düşünüyorsun?"))
+	if err != nil {
+		return "", err
+	}
+
+	result := ""
+
+	for _, cand := range resp.Candidates {
+		if cand.Content != nil {
+			for _, part := range cand.Content.Parts {
+				if xo, err := json.Marshal(&part); err != nil {
+					continue
+				} else {
+					result = string(xo)
+				}
+				break
+			}
+		}
+	}
+
+	return strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(result, "\""), "\""), "\\n", "\n"), nil
+}
+
 type DebounceFunc = func(f func())
 
 func Debouncer() DebounceFunc {
@@ -84,7 +113,7 @@ func Debouncer() DebounceFunc {
 			timer.Stop()
 		}
 
-		timer = time.AfterFunc(500*time.Millisecond, func() {
+		timer = time.AfterFunc(300*time.Millisecond, func() {
 			mu.Lock()
 			defer mu.Unlock()
 			f()

@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/google/generative-ai-go/genai"
 	"github.com/joho/godotenv"
+	"google.golang.org/api/option"
 )
 
 var (
@@ -78,6 +81,20 @@ var (
 				},
 			},
 		},
+		{
+			Name:        "examine",
+			Description: "Get the AI review for a movie.",
+			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "movie",
+					Description:  "Name of the movie",
+					Type:         discordgo.ApplicationCommandOptionString,
+					Required:     true,
+					Autocomplete: true,
+				},
+			},
+		},
 	}
 
 	commandFuncs = map[string]CommandFunc{
@@ -85,9 +102,12 @@ var (
 		"movie":     MovieCommand,
 		"allmovies": GetMoviesCommand,
 		"delete":    DeleteCommand,
+		"examine":   ExamineCommand,
 	}
 
 	debouncers = NewMutexMap[string, DebounceFunc]()
+
+	geminiClient *genai.Client
 )
 
 func main() {
@@ -100,6 +120,12 @@ func main() {
 	if err != nil {
 		log.Fatal("discord session could not be initialized: ", err)
 	}
+
+	geminiClient, err = genai.NewClient(context.Background(), option.WithAPIKey(os.Getenv("GEMINI_API_KEY")))
+	if err != nil {
+		log.Fatal("gemini could not be initialized:", err)
+	}
+	defer geminiClient.Close()
 
 	store, err = NewStore()
 	if err != nil {
@@ -124,7 +150,7 @@ func main() {
 	}
 	defer discord.Close()
 
-	guildID := "1230981851557134396"
+	guildID := "1230949425543774248"
 	createdCommands, err := discord.ApplicationCommandBulkOverwrite(discord.State.User.ID, guildID, commands)
 	if err != nil {
 		log.Fatalf("Cannot register commands: %v", err)
