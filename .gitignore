@@ -2,3 +2,4 @@
 *.db
 *.lock
 main
+*.key
