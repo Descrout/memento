@@ -117,7 +117,7 @@ func (s *Store) SearchMovies(search string) ([]string, error) {
 		err := moviesBucket.ForEach(func(k, v []byte) error {
 			mv := string(k)
 
-			if strings.Contains(strings.ToLower(mv), search) && len(movies) < 5 {
+			if strings.Contains(strings.ToLower(mv), search) && len(movies) < 8 {
 				movies = append(movies, mv)
 			}
 

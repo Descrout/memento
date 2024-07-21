@@ -6,8 +6,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strconv"
+	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -19,33 +21,10 @@ func InteractionAuthor(i *discordgo.Interaction) *discordgo.User {
 	return i.User
 }
 
-func SanitiseCommand(content string, prefix string) string {
-	return strings.TrimSpace(strings.TrimPrefix(content, prefix))
-}
-
-func ValidateScore(scoreStr string) (float64, error) {
-	parts := strings.Split(scoreStr, ".")
-	if len(parts) == 2 && len(parts[1]) > 1 {
-		return 0, fmt.Errorf("Score must be integer(eg 3) or 1 scale decimal(eg 7.5)")
-	}
-
-	score, err := strconv.ParseFloat(scoreStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("Invalid score format: %s", err.Error())
-	}
-
-	if score < 0 || score > 10 {
-		return 0, fmt.Errorf("Score must be between 0 and 10.")
-	}
-
-	return score, nil
-}
-
-func SearchMovies(query string) ([]string, error) {
-	apiKey := "6ca2749b05fab4e15300c20ebf1cf782"
+func SearchMovies(query string, searchCount int) ([]string, error) {
 	baseURL := "https://api.themoviedb.org/3/search/movie"
 	params := url.Values{}
-	params.Add("api_key", apiKey)
+	params.Add("api_key", os.Getenv("TMDB_API_KEY"))
 	params.Add("query", query)
 
 	// Create the URL with the query parameters
@@ -82,11 +61,33 @@ func SearchMovies(query string) ([]string, error) {
 		if movie.VoteCount >= 100 && !movie.Adult {
 			releaseDate := strings.Split(movie.ReleaseDate, "-")[0]
 			titlesWithDetails = append(titlesWithDetails, fmt.Sprintf("%s (%s) ", movie.Title, releaseDate))
-			if len(titlesWithDetails) >= 8 {
+			if len(titlesWithDetails) >= searchCount {
 				break
 			}
 		}
 	}
 
 	return titlesWithDetails, nil
+}
+
+type DebounceFunc = func(f func())
+
+func Debouncer() DebounceFunc {
+	var mu sync.Mutex
+	var timer *time.Timer
+
+	return func(f func()) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if timer != nil {
+			timer.Stop()
+		}
+
+		timer = time.AfterFunc(500*time.Millisecond, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			f()
+		})
+	}
 }

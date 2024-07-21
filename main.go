@@ -86,6 +86,8 @@ var (
 		"allmovies": GetMoviesCommand,
 		"delete":    DeleteCommand,
 	}
+
+	debouncers = NewMutexMap[string, DebounceFunc]()
 )
 
 func main() {
@@ -94,7 +96,7 @@ func main() {
 		log.Fatal("env could not be loaded: ", err)
 	}
 
-	discord, err := discordgo.New("Bot " + os.Getenv("TOKEN"))
+	discord, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
 	if err != nil {
 		log.Fatal("discord session could not be initialized: ", err)
 	}

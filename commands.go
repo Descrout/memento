@@ -49,29 +49,41 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 
-		choices := []*discordgo.ApplicationCommandOptionChoice{}
-
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		if name != "" {
-			// Timer ekle, saniyede 1 arama
-			names, err := SearchMovies(name)
+		author := InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		debounce(func() {
+			names := []string{}
+			namesReviewed, err := store.SearchMovies(name)
 			if err == nil {
-				for _, name := range names {
-					choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-						Name:  name,
-						Value: name,
-					})
+				names = append(names, namesReviewed...)
+			}
+
+			diff := 8 - len(names)
+			if diff > 0 {
+				namesTmdb, err := SearchMovies(name, diff)
+				if err == nil {
+					names = append(names, namesTmdb...)
 				}
 			}
-		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
-			Data: &discordgo.InteractionResponseData{
-				Choices: choices,
-			},
+			choices := []*discordgo.ApplicationCommandOptionChoice{}
+			for _, name := range names {
+				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+					Name:  name,
+					Value: name,
+				})
+			}
+
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{
+					Choices: choices,
+				},
+			})
 		})
+
 	}
 }
 
@@ -115,25 +127,28 @@ func MovieCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 
-		choices := []*discordgo.ApplicationCommandOptionChoice{}
-
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		names, err := store.SearchMovies(name)
-		if err == nil {
-			for _, name := range names {
-				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-					Name:  name,
-					Value: name,
-				})
+		author := InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		debounce(func() {
+			choices := []*discordgo.ApplicationCommandOptionChoice{}
+			names, err := store.SearchMovies(name)
+			if err == nil {
+				for _, name := range names {
+					choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+						Name:  name,
+						Value: name,
+					})
+				}
 			}
-		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
-			Data: &discordgo.InteractionResponseData{
-				Choices: choices,
-			},
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{
+					Choices: choices,
+				},
+			})
 		})
 	}
 }
@@ -212,25 +227,28 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 
-		choices := []*discordgo.ApplicationCommandOptionChoice{}
-
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		names, err := store.SearchMovies(name)
-		if err == nil {
-			for _, name := range names {
-				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-					Name:  name,
-					Value: name,
-				})
+		author := InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		debounce(func() {
+			choices := []*discordgo.ApplicationCommandOptionChoice{}
+			names, err := store.SearchMovies(name)
+			if err == nil {
+				for _, name := range names {
+					choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+						Name:  name,
+						Value: name,
+					})
+				}
 			}
-		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
-			Data: &discordgo.InteractionResponseData{
-				Choices: choices,
-			},
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{
+					Choices: choices,
+				},
+			})
 		})
 	}
 }
