@@ -22,3 +22,55 @@ type Review struct {
 	Score    float64 `json:"score"`
 	Comment  string  `json:"comment"`
 }
+
+type ChatGPTError struct {
+	Error struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+		Param   any    `json:"param"`
+		Code    any    `json:"code"`
+	} `json:"error"`
+}
+
+type ChatGPTMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type ChatGPTCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Text         string `json:"text"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+type ChatGPTChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Usage   struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+	Choices []struct {
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+	} `json:"choices"`
+}

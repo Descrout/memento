@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -72,6 +74,55 @@ func SearchMovies(query string, searchCount int) ([]string, error) {
 	return titlesWithDetails, nil
 }
 
+func ChatGPTRequest(content string) (string, error) {
+	url := "https://gpt4-swiss.openai.azure.com/openai/deployments/GPT-4/chat/completions?api-version=2024-02-15-preview"
+
+	messages := []*ChatGPTMessage{
+		{"user", content},
+	}
+
+	jsonData := map[string]any{
+		"model":    "gpt-4",
+		"messages": messages,
+	}
+
+	jsonBytes, err := json.Marshal(&jsonData)
+	if err != nil {
+		return "", errors.New("chatgpt jsonmarshal error:" + err.Error())
+	}
+
+	reader := bytes.NewReader(jsonBytes)
+	req, err := http.NewRequest(http.MethodPost, url, reader)
+	if err != nil {
+		return "", errors.New("chatgpt newrequest error:" + err.Error())
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api-key", os.Getenv("OPENAI_API_KEY"))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", errors.New("chatgpt do req error:" + err.Error())
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var res ChatGPTError
+		json.NewDecoder(resp.Body).Decode(&res)
+		resp.Body.Close()
+		return "", errors.New(res.Error.Message)
+	}
+
+	var res ChatGPTChatResponse
+	json.NewDecoder(resp.Body).Decode(&res)
+	resp.Body.Close()
+
+	if len(res.Choices) == 0 {
+		return "", errors.New("not choices found")
+	}
+
+	return res.Choices[0].Message.Content, nil
+}
+
 func GeminiRequestMovieExaminationFast(movieName string) (string, error) {
 	model := geminiClient.GenerativeModel("gemini-1.5-flash")
 	cs := model.StartChat()
@@ -113,7 +164,7 @@ func Debouncer() DebounceFunc {
 			timer.Stop()
 		}
 
-		timer = time.AfterFunc(300*time.Millisecond, func() {
+		timer = time.AfterFunc(200*time.Millisecond, func() {
 			mu.Lock()
 			defer mu.Unlock()
 			f()

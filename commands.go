@@ -264,7 +264,20 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		})
 
-		examination, err := GeminiRequestMovieExaminationFast(movieName)
+		requestText := "Aşağıda izlediğimiz filmlere verdiğimiz puanlar var. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüz ? Sever miyiz ? İzlenir mi ?\n\n"
+		movies, averages, err := store.GetMovies()
+		if err != nil {
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
+			})
+			return
+		}
+
+		for i, movie := range movies {
+			requestText += fmt.Sprintf("%s - Puan: %1.f\n", movie, averages[i])
+		}
+
+		examination, err := ChatGPTRequest(requestText)
 		if err != nil {
 			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 				Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
