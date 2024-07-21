@@ -3,3 +3,4 @@
 *.lock
 main
 *.key
+go.sum
