@@ -139,6 +139,7 @@ func OnMessageCreated(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, response)
 	}
 
+	//cleardb Command
 	if strings.HasPrefix(m.Content, "/cleardb") {
 		// Ensure the command issuer has admin privileges
 		if err := store.ClearAllData(); err != nil {
@@ -146,6 +147,36 @@ func OnMessageCreated(s *discordgo.Session, m *discordgo.MessageCreate) {
 		} else {
 			s.ChannelMessageSend(m.ChannelID, "Database cleared successfully.")
 		}
+	}
+
+	//movies Command
+	if strings.HasPrefix(m.Content, "/movies") {
+		movies, err := store.ListMovies()
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, "Failed to retrieve movie list: "+err.Error())
+			return
+		}
+
+		if len(movies) == 0 {
+			s.ChannelMessageSend(m.ChannelID, "No movies found in the database.")
+			return
+		}
+
+		response := "List of movies and their average scores:\n"
+		for _, movie := range movies {
+			_, average, err := store.GetScores(movie) // Reuse GetScores to fetch average scores
+			if err != nil {
+				response += fmt.Sprintf("%s: Error retrieving scores\n", movie)
+				continue
+			}
+			if average == 0 {
+				response += fmt.Sprintf("%s: No score available\n", movie)
+			} else {
+				response += fmt.Sprintf("%s: %.2f\n", movie, average)
+			}
+		}
+
+		s.ChannelMessageSend(m.ChannelID, response)
 	}
 }
 

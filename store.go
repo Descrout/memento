@@ -108,6 +108,23 @@ func (s *Store) GetScores(movie string) (map[string]float64, float64, error) {
 	return scores, average, nil
 }
 
+func (s *Store) ListMovies() ([]string, error) {
+	var movies []string
+	err := s.db.View(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket([]byte("Movies"))
+		if moviesBucket == nil {
+			return fmt.Errorf("movies bucket does not exist")
+		}
+
+		return moviesBucket.ForEach(func(k, v []byte) error {
+			movies = append(movies, string(k))
+			return nil
+		})
+	})
+
+	return movies, err
+}
+
 func (s *Store) ClearAllData() error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		// Iterate over all bucket names and delete them
