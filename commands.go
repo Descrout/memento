@@ -38,7 +38,6 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: fmt.Sprintf("**%s** reviewed ``%s`` ``%.1f``\n```%s```", author.Username, movieName, score, comment),
-				//Content: fmt.Sprintf("A review added for the movie **``%s``** by **%s:** ``(%.1f)``  **-** ``\"%s\"`` ", movieName, i.Interaction.Member.Nick, score, comment),
 			},
 		})
 
@@ -83,7 +82,6 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				},
 			})
 		})
-
 	}
 }
 
@@ -264,7 +262,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		})
 
-		requestText := "Aşağıda izlediğimiz filmlere verdiğimiz puanlar var. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüz ? Sever miyiz ? İzlenir mi ?\n\n"
+		requestText := "Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm ? Sever miyim ? İzlenir mi ?\n\nListe:\n"
 		movies, averages, err := store.GetMovies()
 		if err != nil {
 			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{

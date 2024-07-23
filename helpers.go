@@ -111,7 +111,6 @@ func ChatGPTRequest(content string) (string, error) {
 		resp.Body.Close()
 		return "", errors.New(res.Error.Message)
 	}
-
 	var res ChatGPTChatResponse
 	json.NewDecoder(resp.Body).Decode(&res)
 	resp.Body.Close()

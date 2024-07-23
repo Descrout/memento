@@ -150,7 +150,7 @@ func main() {
 	}
 	defer discord.Close()
 
-	guildID := "1230981851557134396"
+	guildID := os.Getenv("GUILD_ID")
 	createdCommands, err := discord.ApplicationCommandBulkOverwrite(discord.State.User.ID, guildID, commands)
 	if err != nil {
 		log.Fatalf("Cannot register commands: %v", err)
