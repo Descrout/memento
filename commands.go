@@ -252,81 +252,103 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	switch i.Type {
-	case discordgo.InteractionApplicationCommand:
-		data := i.ApplicationCommandData()
+    switch i.Type {
+    case discordgo.InteractionApplicationCommand:
+        data := i.ApplicationCommandData()
 
-		movieName := strings.TrimSpace(data.Options[0].StringValue())
+        movieName := strings.TrimSpace(data.Options[0].StringValue())
+        personal := strings.TrimSpace(data.Options[1].StringValue())
+        var requestText strings.Builder
+        
+        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+        })
+        
+        if personal == "yes" {
+            requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm? Sever miyim? İzlenir mi?\n\nListe:\n")
+            reviews, err := store.GetReviewsByUser(InteractionAuthor(i.Interaction).ID)
+            if err != nil {
+                s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                    Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
+                })
+                return
+            }
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		})
+            for _, review := range reviews {
+                movieName, err := store.GetMovieNameByReview(review)
+                if err != nil {
+                    continue
+                }
+                requestText.WriteString(fmt.Sprintf("%s - Score: %.1f\n", movieName, review.Score))
+            }
+        } else {
+            requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm? Sever miyim? İzlenir mi?\n\nListe:\n")
+            movies, averages, err := store.GetMovies()
+            if err != nil {
+                s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                    Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
+                })
+                return
+            }
+            for i, movie := range movies {
+                requestText.WriteString(fmt.Sprintf("%s - Average Score: %.1f\n", movie, averages[i]))
+            }
+        }
 
-		requestText := "Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm ? Sever miyim ? İzlenir mi ?\n\nListe:\n"
-		movies, averages, err := store.GetMovies()
-		if err != nil {
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
-			})
-			return
-		}
+        examination, err := ChatGPTRequest(requestText.String())
 
-		for i, movie := range movies {
-			requestText += fmt.Sprintf("%s - Puan: %1.f\n", movie, averages[i])
-		}
+        if err != nil {
+            s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
+            })
+        } else {
+            s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                Content: examination,
+            })
+        }
+    case discordgo.InteractionApplicationCommandAutocomplete:
+        data := i.ApplicationCommandData()
+        if !data.Options[0].Focused {
+            return
+        }
 
-		examination, err := ChatGPTRequest(requestText)
-		if err != nil {
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
-			})
-		} else {
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Content: examination,
-			})
-		}
-	case discordgo.InteractionApplicationCommandAutocomplete:
-		data := i.ApplicationCommandData()
-		if !data.Options[0].Focused {
-			return
-		}
+        name := strings.TrimSpace(data.Options[0].StringValue())
 
-		name := strings.TrimSpace(data.Options[0].StringValue())
+        author := InteractionAuthor(i.Interaction)
+        debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+        debounce(func() {
+            names := []string{}
+            namesReviewed, err := store.SearchMovies(name)
+            if err == nil {
+                names = append(names, namesReviewed...)
+            }
 
-		author := InteractionAuthor(i.Interaction)
-		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
-		debounce(func() {
-			names := []string{}
-			namesReviewed, err := store.SearchMovies(name)
-			if err == nil {
-				names = append(names, namesReviewed...)
-			}
+            diff := 8 - len(names)
+            if diff > 0 {
+                namesTmdb, err := SearchMovies(name, diff)
+                if err == nil {
+                    names = append(names, namesTmdb...)
+                }
+            }
 
-			diff := 8 - len(names)
-			if diff > 0 {
-				namesTmdb, err := SearchMovies(name, diff)
-				if err == nil {
-					names = append(names, namesTmdb...)
-				}
-			}
+            choices := []*discordgo.ApplicationCommandOptionChoice{}
+            for _, name := range names {
+                choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+                    Name:  name,
+                    Value: name,
+                })
+            }
 
-			choices := []*discordgo.ApplicationCommandOptionChoice{}
-			for _, name := range names {
-				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-					Name:  name,
-					Value: name,
-				})
-			}
-
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
-				Data: &discordgo.InteractionResponseData{
-					Choices: choices,
-				},
-			})
-		})
-	}
+            s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+                Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+                Data: &discordgo.InteractionResponseData{
+                    Choices: choices,
+                },
+            })
+        })
+    }
 }
+
 
 func MyReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
     switch i.Type {
@@ -379,40 +401,62 @@ func averageScore(reviews []*Review) float64 {
 func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
     switch i.Type {
     case discordgo.InteractionApplicationCommand:
+        data := i.ApplicationCommandData()
 
+        personal := strings.TrimSpace(data.Options[0].StringValue())
         author := InteractionAuthor(i.Interaction)
-        reviews, err := store.GetReviewsByUser(author.ID)
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		})
+        var requestText strings.Builder
+        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+        })
 
-        requestText := "Sana film listesi ve onlara verdiğim puanları vereceğim.Bunlara göre bana beğenebileceğim 3 film öner:\n\n"
-		if err != nil {
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Content: fmt.Sprintf("AI Recommendation failed: %s", err.Error()),
-			})
-			return
-		}
-        
-        for _, review := range reviews {
-            movieName, err := store.GetMovieNameByReview(review)
-            if err != nil {
-                continue
+        if personal == "yes" {
+            requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bunlara göre bana beğenebileceğim 3 film öner:\n\n")
+
+            reviews, err := store.GetReviewsByUser(author.ID)
+            if err != nil || len(reviews) == 0 {
+                responseMessage := "You haven't reviewed any movies yet, so recommendations cannot be provided."
+                if err != nil {
+                    responseMessage = fmt.Sprintf("AI Recommendation failed: %s", err.Error())
+                }
+                s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                    Content: responseMessage,
+                })
+                return
             }
-            requestText += (fmt.Sprintf("%s - Score: %.1f\n", movieName, review.Score))
+
+            for _, review := range reviews {
+                movieName, err := store.GetMovieNameByReview(review)
+                if err != nil {
+                    continue
+                }
+                requestText.WriteString(fmt.Sprintf("%s - Score: %.1f\n", movieName, review.Score))
+            }
+        } else {
+            requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bunlara göre bana beğenebileceğim 3 film öner:\n\n")
+            movies, averages, err := store.GetMovies()
+            if err != nil {
+                s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                    Content: fmt.Sprintf("AI Recommendation failed: %s", err.Error()),
+                })
+                return
+            }
+            for i, movie := range movies {
+                requestText.WriteString(fmt.Sprintf("%s - Average Score: %.1f\n", movie, averages[i]))
+            }
         }
 
-        recommendations, err := ChatGPTRequest(requestText)
+        recommendations, err := ChatGPTRequest(requestText.String())
         if err != nil {
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Content: fmt.Sprintf("AI Reccomendation failed: %s", err.Error()),
-			})
-		} else {
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Content: recommendations,
-			})
-		}
+            s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                Content: fmt.Sprintf("AI Recommendation failed: %s", err.Error()),
+            })
+        } else {
+            s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+                Content: recommendations,
+            })
+        }
     }
 }
 

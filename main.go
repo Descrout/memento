@@ -76,6 +76,24 @@ var (
 			Name:        "recommend",
 			Description: "Get 3 movie recommendations based on your watched movies and given scores.",
 			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "personal",
+					Description:  "Use personal movie list and scores (yes/no)",
+					Type:         discordgo.ApplicationCommandOptionString,
+					Required:     true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{
+							Name:  "yes",
+							Value: "yes",
+						},
+						{
+							Name:  "no",
+							Value: "no",
+						},
+					},
+				},
+			},
 		},
 		{
 			Name:        "delete",
@@ -103,9 +121,26 @@ var (
 					Required:     true,
 					Autocomplete: true,
 				},
+				{
+					Name:         "personal",
+					Description:  "Use personal movie list and scores (yes/no)",
+					Type:         discordgo.ApplicationCommandOptionString,
+					Required:     true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{
+							Name:  "yes",
+							Value: "yes",
+						},
+						{
+							Name:  "no",
+							Value: "no",
+						},
+					},
+				},
 			},
 		},
-	}
+	}	
+
 
 	commandFuncs = map[string]CommandFunc{
 		"review":    ReviewCommand,
