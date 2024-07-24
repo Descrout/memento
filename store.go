@@ -245,3 +245,70 @@ func (s *Store) ClearAllData() error {
 		})
 	})
 }
+
+func (s *Store) GetReviewsByUser(userID string) ([]*Review, error) {
+    var reviews []*Review
+
+    err := s.db.View(func(tx *bolt.Tx) error {
+        moviesBucket := tx.Bucket(s.moviesBucketKey)
+
+        return moviesBucket.ForEach(func(k, v []byte) error {
+            movieBucket := moviesBucket.Bucket(k)
+            if movieBucket == nil {
+                return nil
+            }
+
+            return movieBucket.ForEach(func(reviewKey, reviewValue []byte) error {
+                if string(reviewKey) == userID {
+                    var review Review
+                    if err := json.Unmarshal(reviewValue, &review); err != nil {
+                        return err
+                    }
+                    reviews = append(reviews, &review)
+                }
+                return nil
+            })
+        })
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    return reviews, nil
+}
+
+func (s *Store) GetMovieNameByReview(review *Review) (string, error) {
+    var movieName string
+
+    err := s.db.View(func(tx *bolt.Tx) error {
+        moviesBucket := tx.Bucket(s.moviesBucketKey)
+
+        return moviesBucket.ForEach(func(k, v []byte) error {
+            movieBucket := moviesBucket.Bucket(k)
+            if movieBucket == nil {
+                return nil
+            }
+
+            return movieBucket.ForEach(func(reviewKey, reviewValue []byte) error {
+                var r Review
+                if err := json.Unmarshal(reviewValue, &r); err != nil {
+                    return err
+                }
+
+                if r.AuthorID == review.AuthorID && r.Comment == review.Comment && r.Score == review.Score {
+                    movieName = string(k)
+                    return nil
+                }
+                return nil
+            })
+        })
+    })
+
+    if err != nil {
+        return "", err
+    }
+
+    return movieName, nil
+}
+

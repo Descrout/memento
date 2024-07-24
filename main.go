@@ -63,8 +63,18 @@ var (
 			},
 		},
 		{
+			Name:        "myreviews",
+			Description: "Get the list of your reviews.",
+			Type:        discordgo.ChatApplicationCommand,
+		},
+		{
 			Name:        "allmovies",
 			Description: "Get the all the movies you have watched.",
+			Type:        discordgo.ChatApplicationCommand,
+		},
+		{
+			Name:        "recommend",
+			Description: "Get 3 movie recommendations based on your watched movies and given scores.",
 			Type:        discordgo.ChatApplicationCommand,
 		},
 		{
@@ -103,6 +113,8 @@ var (
 		"allmovies": GetMoviesCommand,
 		"delete":    DeleteCommand,
 		"examine":   ExamineCommand,
+		"myreviews": MyReviewsCommand, 
+		"recommend":  RecommendCommand, 
 	}
 
 	debouncers = NewMutexMap[string, DebounceFunc]()

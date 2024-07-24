@@ -327,3 +327,92 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 }
+
+func MyReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    switch i.Type {
+    case discordgo.InteractionApplicationCommand:
+        author := InteractionAuthor(i.Interaction)
+        reviews, err := store.GetReviewsByUser(author.ID)
+        if err != nil || len(reviews) == 0 {
+            responseMessage := "You haven't reviewed any movies yet."
+            if err != nil {
+                responseMessage = fmt.Sprintf("Reviews could not be fetched: %s", err.Error())
+            }
+            s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+                Type: discordgo.InteractionResponseChannelMessageWithSource,
+                Data: &discordgo.InteractionResponseData{
+                    Content: responseMessage,
+                },
+            })
+            return
+        }
+
+        var result strings.Builder
+
+        result.WriteString(fmt.Sprintf("# %s ``[%.1f]``\n", author.Username, averageScore(reviews)))
+
+        for _, review := range reviews {
+            movieName, err := store.GetMovieNameByReview(review)
+            if err != nil {
+                continue
+            }
+            result.WriteString(fmt.Sprintf("- **%s** **``(%.1f)``** - ``\"%s\"``\n", movieName, review.Score, review.Comment))
+        }
+
+        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseChannelMessageWithSource,
+            Data: &discordgo.InteractionResponseData{
+                Content: result.String(),
+            },
+        })
+    }
+}
+
+func averageScore(reviews []*Review) float64 {
+    var totalScore float64
+    for _, review := range reviews {
+        totalScore += review.Score
+    }
+    return totalScore / float64(len(reviews))
+}
+
+func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    switch i.Type {
+    case discordgo.InteractionApplicationCommand:
+
+        author := InteractionAuthor(i.Interaction)
+        reviews, err := store.GetReviewsByUser(author.ID)
+
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		})
+
+        requestText := "Sana film listesi ve onlara verdiğim puanları vereceğim.Bunlara göre bana beğenebileceğim 3 film öner:\n\n"
+		if err != nil {
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: fmt.Sprintf("AI Recommendation failed: %s", err.Error()),
+			})
+			return
+		}
+        
+        for _, review := range reviews {
+            movieName, err := store.GetMovieNameByReview(review)
+            if err != nil {
+                continue
+            }
+            requestText += (fmt.Sprintf("%s - Score: %.1f\n", movieName, review.Score))
+        }
+
+        recommendations, err := ChatGPTRequest(requestText)
+        if err != nil {
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: fmt.Sprintf("AI Reccomendation failed: %s", err.Error()),
+			})
+		} else {
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: recommendations,
+			})
+		}
+    }
+}
+
