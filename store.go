@@ -246,69 +246,72 @@ func (s *Store) ClearAllData() error {
 	})
 }
 
-func (s *Store) GetReviewsByUser(userID string) ([]*Review, error) {
-    var reviews []*Review
+func (s *Store) GetReviewsByUser(userID string) ([]*Review, []string, error) {
+	reviews := []*Review{}
+	movieNames := []string{}
 
-    err := s.db.View(func(tx *bolt.Tx) error {
-        moviesBucket := tx.Bucket(s.moviesBucketKey)
+	err := s.db.View(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+		return moviesBucket.ForEach(func(k, v []byte) error {
+			movieBucket := moviesBucket.Bucket(k)
+			if movieBucket == nil {
+				return nil
+			}
 
-        return moviesBucket.ForEach(func(k, v []byte) error {
-            movieBucket := moviesBucket.Bucket(k)
-            if movieBucket == nil {
-                return nil
-            }
+			reviewValue := movieBucket.Get([]byte(userID))
+			if reviewValue == nil {
+				return nil
+			}
 
-            return movieBucket.ForEach(func(reviewKey, reviewValue []byte) error {
-                if string(reviewKey) == userID {
-                    var review Review
-                    if err := json.Unmarshal(reviewValue, &review); err != nil {
-                        return err
-                    }
-                    reviews = append(reviews, &review)
-                }
-                return nil
-            })
-        })
-    })
+			var review Review
+			if err := json.Unmarshal(reviewValue, &review); err != nil {
+				return nil
+			}
 
-    if err != nil {
-        return nil, err
-    }
+			reviews = append(reviews, &review)
+			movieNames = append(movieNames, string(k))
 
-    return reviews, nil
+			return nil
+		})
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return reviews, movieNames, nil
 }
 
-func (s *Store) GetMovieNameByReview(review *Review) (string, error) {
-    var movieName string
+// func (s *Store) GetMovieNameByReview(review *Review) (string, error) {
+// 	var movieName string
 
-    err := s.db.View(func(tx *bolt.Tx) error {
-        moviesBucket := tx.Bucket(s.moviesBucketKey)
+// 	err := s.db.View(func(tx *bolt.Tx) error {
+// 		moviesBucket := tx.Bucket(s.moviesBucketKey)
 
-        return moviesBucket.ForEach(func(k, v []byte) error {
-            movieBucket := moviesBucket.Bucket(k)
-            if movieBucket == nil {
-                return nil
-            }
+// 		return moviesBucket.ForEach(func(k, v []byte) error {
+// 			movieBucket := moviesBucket.Bucket(k)
+// 			if movieBucket == nil {
+// 				return nil
+// 			}
 
-            return movieBucket.ForEach(func(reviewKey, reviewValue []byte) error {
-                var r Review
-                if err := json.Unmarshal(reviewValue, &r); err != nil {
-                    return err
-                }
+// 			return movieBucket.ForEach(func(reviewKey, reviewValue []byte) error {
+// 				var r Review
+// 				if err := json.Unmarshal(reviewValue, &r); err != nil {
+// 					return err
+// 				}
 
-                if r.AuthorID == review.AuthorID && r.Comment == review.Comment && r.Score == review.Score {
-                    movieName = string(k)
-                    return nil
-                }
-                return nil
-            })
-        })
-    })
+// 				if r.AuthorID == review.AuthorID && r.Comment == review.Comment && r.Score == review.Score {
+// 					movieName = string(k)
+// 					return nil
+// 				}
+// 				return nil
+// 			})
+// 		})
+// 	})
 
-    if err != nil {
-        return "", err
-    }
+// 	if err != nil {
+// 		return "", err
+// 	}
 
-    return movieName, nil
-}
-
+// 	return movieName, nil
+// }

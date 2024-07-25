@@ -78,20 +78,10 @@ var (
 			Type:        discordgo.ChatApplicationCommand,
 			Options: []*discordgo.ApplicationCommandOption{
 				{
-					Name:         "personal",
-					Description:  "Use personal movie list and scores (yes/no)",
-					Type:         discordgo.ApplicationCommandOptionString,
-					Required:     true,
-					Choices: []*discordgo.ApplicationCommandOptionChoice{
-						{
-							Name:  "yes",
-							Value: "yes",
-						},
-						{
-							Name:  "no",
-							Value: "no",
-						},
-					},
+					Name:        "personal",
+					Description: "Use personal movie list and scores.",
+					Type:        discordgo.ApplicationCommandOptionBoolean,
+					Required:    true,
 				},
 			},
 		},
@@ -122,25 +112,14 @@ var (
 					Autocomplete: true,
 				},
 				{
-					Name:         "personal",
-					Description:  "Use personal movie list and scores (yes/no)",
-					Type:         discordgo.ApplicationCommandOptionString,
-					Required:     true,
-					Choices: []*discordgo.ApplicationCommandOptionChoice{
-						{
-							Name:  "yes",
-							Value: "yes",
-						},
-						{
-							Name:  "no",
-							Value: "no",
-						},
-					},
+					Name:        "personal",
+					Description: "Use personal movie list and scores.",
+					Type:        discordgo.ApplicationCommandOptionBoolean,
+					Required:    true,
 				},
 			},
 		},
-	}	
-
+	}
 
 	commandFuncs = map[string]CommandFunc{
 		"review":    ReviewCommand,
@@ -148,8 +127,8 @@ var (
 		"allmovies": GetMoviesCommand,
 		"delete":    DeleteCommand,
 		"examine":   ExamineCommand,
-		"myreviews": MyReviewsCommand, 
-		"recommend":  RecommendCommand, 
+		"myreviews": MyReviewsCommand,
+		"recommend": RecommendCommand,
 	}
 
 	debouncers = NewMutexMap[string, DebounceFunc]()

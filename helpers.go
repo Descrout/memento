@@ -25,6 +25,14 @@ func InteractionAuthor(i *discordgo.Interaction) *discordgo.User {
 	return i.User
 }
 
+func AverageScore(reviews []*Review) float64 {
+	var totalScore float64
+	for _, review := range reviews {
+		totalScore += review.Score
+	}
+	return totalScore / float64(len(reviews))
+}
+
 func SearchMovies(query string, searchCount int) ([]string, error) {
 	baseURL := "https://api.themoviedb.org/3/search/movie"
 	params := url.Values{}
