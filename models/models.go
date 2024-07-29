@@ -1,4 +1,4 @@
-package main
+package models
 
 // TMDBResponse represents the structure of the response from the TMDB API
 type TMDBResponse struct {
@@ -24,7 +24,7 @@ type Review struct {
 }
 
 // Create a response structure
-var response []struct {
+type GetReviewsByUserResponse struct {
 	MovieName string           `json:"movie_name"`
 	Reviews   []ReviewResponse `json:"reviews"`
 }
@@ -91,4 +91,11 @@ type ChatGPTChatResponse struct {
 		FinishReason string `json:"finish_reason"`
 		Index        int    `json:"index"`
 	} `json:"choices"`
+}
+
+type AddReviewRequest struct {
+	UserID    string  `json:"user_id"`
+	MovieName string  `json:"movie"`
+	Rating    float64 `json:"rating"`
+	Comment   string  `json:"comment"`
 }

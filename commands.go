@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"memento/models"
+	"memento/utils"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -18,9 +20,9 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		score := data.Options[1].FloatValue()
 		comment := data.Options[2].StringValue()
 
-		author := InteractionAuthor(i.Interaction)
+		author := utils.InteractionAuthor(i.Interaction)
 
-		if err := store.AddReview(movieName, &Review{
+		if err := store.AddReview(movieName, &models.Review{
 			AuthorID: author.ID,
 			Score:    score,
 			Comment:  comment,
@@ -50,8 +52,8 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		author := InteractionAuthor(i.Interaction)
-		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		author := utils.InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, utils.Debouncer())
 		debounce(func() {
 			names := []string{}
 			namesReviewed, err := store.SearchMovies(name)
@@ -61,7 +63,7 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 			diff := 8 - len(names)
 			if diff > 0 {
-				namesTmdb, err := SearchMovies(name, diff)
+				namesTmdb, err := utils.SearchMovies(name, diff)
 				if err == nil {
 					names = append(names, namesTmdb...)
 				}
@@ -127,8 +129,8 @@ func MovieCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		author := InteractionAuthor(i.Interaction)
-		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		author := utils.InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, utils.Debouncer())
 		debounce(func() {
 			choices := []*discordgo.ApplicationCommandOptionChoice{}
 			names, err := store.SearchMovies(name)
@@ -186,7 +188,7 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		data := i.ApplicationCommandData()
 
 		movieName := strings.TrimSpace(data.Options[0].StringValue())
-		author := InteractionAuthor(i.Interaction)
+		author := utils.InteractionAuthor(i.Interaction)
 
 		err := store.DeleteReview(movieName, author.ID)
 		if err != nil {
@@ -227,8 +229,8 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		author := InteractionAuthor(i.Interaction)
-		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		author := utils.InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, utils.Debouncer())
 		debounce(func() {
 			choices := []*discordgo.ApplicationCommandOptionChoice{}
 			names, err := store.SearchMovies(name)
@@ -266,7 +268,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm? Sever miyim? İzlenir mi?\n\nListe:\n")
 
 		if personal {
-			reviews, names, err := store.GetReviewsByUser(InteractionAuthor(i.Interaction).ID)
+			reviews, names, err := store.GetReviewsByUser(utils.InteractionAuthor(i.Interaction).ID)
 			if err != nil {
 				s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 					Content: fmt.Sprintf("AI Examination failed: %s", err.Error()),
@@ -289,7 +291,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			}
 		}
 
-		examination, err := ChatGPTRequest(requestText.String())
+		examination, err := utils.ChatGPTRequest(requestText.String())
 
 		if err != nil {
 			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
@@ -308,8 +310,8 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		name := strings.TrimSpace(data.Options[0].StringValue())
 
-		author := InteractionAuthor(i.Interaction)
-		debounce := debouncers.SetIfNotExists(author.ID, Debouncer())
+		author := utils.InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, utils.Debouncer())
 		debounce(func() {
 			names := []string{}
 			namesReviewed, err := store.SearchMovies(name)
@@ -319,7 +321,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 			diff := 8 - len(names)
 			if diff > 0 {
-				namesTmdb, err := SearchMovies(name, diff)
+				namesTmdb, err := utils.SearchMovies(name, diff)
 				if err == nil {
 					names = append(names, namesTmdb...)
 				}
@@ -346,7 +348,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 func MyReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
-		author := InteractionAuthor(i.Interaction)
+		author := utils.InteractionAuthor(i.Interaction)
 		reviews, names, err := store.GetReviewsByUser(author.ID)
 		if err != nil || len(reviews) == 0 {
 			responseMessage := "You haven't reviewed any movies yet."
@@ -364,7 +366,7 @@ func MyReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		var result strings.Builder
 
-		result.WriteString(fmt.Sprintf("# %s ``[%.1f]``\n", author.Username, AverageScore(reviews)))
+		result.WriteString(fmt.Sprintf("# %s ``[%.1f]``\n", author.Username, utils.AverageScore(reviews)))
 
 		for i, review := range reviews {
 			result.WriteString(fmt.Sprintf("- **%s** **``(%.1f)``** - ``\"%s\"``\n", names[i], review.Score, review.Comment))
@@ -385,7 +387,7 @@ func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		data := i.ApplicationCommandData()
 
 		personal := data.Options[0].BoolValue()
-		author := InteractionAuthor(i.Interaction)
+		author := utils.InteractionAuthor(i.Interaction)
 
 		var requestText strings.Builder
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -423,7 +425,7 @@ func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			}
 		}
 
-		recommendations, err := ChatGPTRequest(requestText.String())
+		recommendations, err := utils.ChatGPTRequest(requestText.String())
 		if err != nil {
 			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 				Content: fmt.Sprintf("AI Recommendation failed: %s", err.Error()),

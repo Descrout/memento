@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"memento/models"
 	"strings"
 
 	"github.com/boltdb/bolt"
@@ -42,7 +43,7 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) AddReview(movieName string, review *Review) error {
+func (s *Store) AddReview(movieName string, review *models.Review) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
 
@@ -71,7 +72,7 @@ func (s *Store) GetMovies() ([]string, []float64, error) {
 			totalScore := float64(0)
 			count := 0
 			err := movieBucket.ForEach(func(k, v []byte) error {
-				review := &Review{}
+				review := &models.Review{}
 				err := json.Unmarshal(v, review)
 				if err != nil {
 					return err
@@ -137,9 +138,9 @@ func (s *Store) SearchMovies(search string) ([]string, error) {
 	return movies, nil
 }
 
-func (s *Store) GetReviews(movie string) ([]*Review, float64, error) {
+func (s *Store) GetReviews(movie string) ([]*models.Review, float64, error) {
 	var totalScore float64
-	reviews := []*Review{}
+	reviews := []*models.Review{}
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
@@ -147,7 +148,7 @@ func (s *Store) GetReviews(movie string) ([]*Review, float64, error) {
 		movieBucket := moviesBucket.Bucket([]byte(movie))
 
 		err := movieBucket.ForEach(func(k, v []byte) error {
-			review := &Review{}
+			review := &models.Review{}
 			err := json.Unmarshal(v, review)
 			if err != nil {
 				return err
@@ -246,8 +247,8 @@ func (s *Store) ClearAllData() error {
 	})
 }
 
-func (s *Store) GetReviewsByUser(userID string) ([]*Review, []string, error) {
-	reviews := []*Review{}
+func (s *Store) GetReviewsByUser(userID string) ([]*models.Review, []string, error) {
+	reviews := []*models.Review{}
 	movieNames := []string{}
 
 	err := s.db.View(func(tx *bolt.Tx) error {
@@ -263,7 +264,7 @@ func (s *Store) GetReviewsByUser(userID string) ([]*Review, []string, error) {
 				return nil
 			}
 
-			var review Review
+			var review models.Review
 			if err := json.Unmarshal(reviewValue, &review); err != nil {
 				return nil
 			}

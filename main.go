@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"log"
+	"memento/utils"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-chi/chi/v5"
@@ -134,7 +136,7 @@ var (
 		"recommend": RecommendCommand,
 	}
 
-	debouncers = NewMutexMap[string, DebounceFunc]()
+	debouncers = NewMutexMap[string, utils.DebounceFunc]()
 
 	geminiClient *genai.Client
 )
@@ -187,11 +189,29 @@ func main() {
 
 	// Webserver
 	router := chi.NewRouter()
+	router.Use(middleware.RequestID)
+	router.Use(middleware.RealIP)
 	router.Use(middleware.Logger)
+	router.Use(middleware.Recoverer)
+	router.Use(middleware.Timeout(60 * time.Second))
 
 	router.Get("/myreviews", GetReviewsByAuthorID)
 	router.Get("/allmovies", GetAllMovies)
 	router.Get("/movie", GetReviewsByMovieName)
+
+	// router.Group(func(r chi.Router) {
+	// 	router.Get("/myreviews", GetReviewsByAuthorID)
+	// 	router.Get("/allmovies", GetAllMovies)
+	// 	router.Get("/movie", GetReviewsByMovieName)
+	// })
+
+	// router.Route("/movie", func(r chi.Router) {
+	// 	router.Get("/review", GetReviewsByAuthorID)
+	// 	router.Get("/all", GetAllMovies)
+	// 	router.Get("/", GetReviewsByMovieName)
+	// })
+
+	router.Get("/allmovies", GetAllMovies)
 
 	server := http.Server{
 		Addr:    ":8080",

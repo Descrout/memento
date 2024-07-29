@@ -1,12 +1,12 @@
-package main
+package utils
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"memento/models"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/google/generative-ai-go/genai"
 )
 
 func InteractionAuthor(i *discordgo.Interaction) *discordgo.User {
@@ -25,7 +24,7 @@ func InteractionAuthor(i *discordgo.Interaction) *discordgo.User {
 	return i.User
 }
 
-func AverageScore(reviews []*Review) float64 {
+func AverageScore(reviews []*models.Review) float64 {
 	var totalScore float64
 	for _, review := range reviews {
 		totalScore += review.Score
@@ -61,7 +60,7 @@ func SearchMovies(query string, searchCount int) ([]string, error) {
 	}
 
 	// Parse the JSON response
-	var tmdbResponse TMDBResponse
+	var tmdbResponse models.TMDBResponse
 	err = json.Unmarshal(body, &tmdbResponse)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling response: %v", err)
@@ -85,8 +84,8 @@ func SearchMovies(query string, searchCount int) ([]string, error) {
 func ChatGPTRequest(content string) (string, error) {
 	url := "https://gpt4-swiss.openai.azure.com/openai/deployments/GPT-4/chat/completions?api-version=2024-02-15-preview"
 
-	messages := []*ChatGPTMessage{
-		{"user", content},
+	messages := []*models.ChatGPTMessage{
+		{Role: "user", Content: content},
 	}
 
 	jsonData := map[string]any{
@@ -114,12 +113,12 @@ func ChatGPTRequest(content string) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var res ChatGPTError
+		var res models.ChatGPTError
 		json.NewDecoder(resp.Body).Decode(&res)
 		resp.Body.Close()
 		return "", errors.New(res.Error.Message)
 	}
-	var res ChatGPTChatResponse
+	var res models.ChatGPTChatResponse
 	json.NewDecoder(resp.Body).Decode(&res)
 	resp.Body.Close()
 
@@ -130,32 +129,32 @@ func ChatGPTRequest(content string) (string, error) {
 	return res.Choices[0].Message.Content, nil
 }
 
-func GeminiRequestMovieExaminationFast(movieName string) (string, error) {
-	model := geminiClient.GenerativeModel("gemini-1.5-flash")
-	cs := model.StartChat()
+// func GeminiRequestMovieExaminationFast(movieName string) (string, error) {
+// 	model := geminiClient.GenerativeModel("gemini-1.5-flash")
+// 	cs := model.StartChat()
 
-	resp, err := cs.SendMessage(context.Background(), genai.Text(movieName+" filmi hakkında ne düşünüyorsun?"))
-	if err != nil {
-		return "", err
-	}
+// 	resp, err := cs.SendMessage(context.Background(), genai.Text(movieName+" filmi hakkında ne düşünüyorsun?"))
+// 	if err != nil {
+// 		return "", err
+// 	}
 
-	result := ""
+// 	result := ""
 
-	for _, cand := range resp.Candidates {
-		if cand.Content != nil {
-			for _, part := range cand.Content.Parts {
-				if xo, err := json.Marshal(&part); err != nil {
-					continue
-				} else {
-					result = string(xo)
-				}
-				break
-			}
-		}
-	}
+// 	for _, cand := range resp.Candidates {
+// 		if cand.Content != nil {
+// 			for _, part := range cand.Content.Parts {
+// 				if xo, err := json.Marshal(&part); err != nil {
+// 					continue
+// 				} else {
+// 					result = string(xo)
+// 				}
+// 				break
+// 			}
+// 		}
+// 	}
 
-	return strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(result, "\""), "\""), "\\n", "\n"), nil
-}
+// 	return strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(result, "\""), "\""), "\\n", "\n"), nil
+// }
 
 type DebounceFunc = func(f func())
 
@@ -177,4 +176,51 @@ func Debouncer() DebounceFunc {
 			f()
 		})
 	}
+}
+
+func JsonEncode(w http.ResponseWriter, status int, v any) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		return fmt.Errorf("encode json: %w", err)
+	}
+	return nil
+}
+
+func JsonDecode[T any](r *http.Request) (T, error) {
+	var v T
+	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+		return v, fmt.Errorf("decode json: %w", err)
+	}
+
+	return v, nil
+}
+
+// GENERICS
+type Number interface {
+	int | float64 | float32 | int32
+}
+
+func MaxElement[T Number](list []T) T {
+	max := list[0]
+
+	for i := 1; i < len(list); i++ {
+		if max < list[i] {
+			max = list[i]
+		}
+	}
+
+	return max
+}
+
+func MinElement[T Number](list []T) T {
+	max := list[0]
+
+	for i := 1; i < len(list); i++ {
+		if max > list[i] {
+			max = list[i]
+		}
+	}
+
+	return max
 }
