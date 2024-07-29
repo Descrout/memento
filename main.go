@@ -187,7 +187,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/myreviews", GetReviewsByAuthorID)
-	mux.HandleFunc("/allmovies", GetMoviesWithAverageScores)
+	mux.HandleFunc("/allmovies", GetAllMovies)
 	mux.HandleFunc("/movie", GetReviewsByMovieName)
 
 	server := http.Server{

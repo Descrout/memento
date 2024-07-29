@@ -23,6 +23,24 @@ type Review struct {
 	Comment  string  `json:"comment"`
 }
 
+// Create a response structure
+var response []struct {
+	MovieName string           `json:"movie_name"`
+	Reviews   []ReviewResponse `json:"reviews"`
+}
+
+type ReviewResponse struct {
+	AuthorID string  `json:"author_id"`
+	Score    float64 `json:"score"`
+	Comment  string  `json:"comment"`
+}
+
+type MovieResponse struct {
+	MovieName    string           `json:"movie_name"`
+	AverageScore float64          `json:"average_score"`
+	Reviews      []ReviewResponse `json:"reviews"`
+}
+
 type ChatGPTError struct {
 	Error struct {
 		Message string `json:"message"`
