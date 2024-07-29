@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -181,6 +182,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("Cannot register commands: %v", err)
 	}
+
+	// Webserver
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/myreviews", GetReviewsByAuthorID)
+	mux.HandleFunc("/allmovies", GetMoviesWithAverageScores)
+	mux.HandleFunc("/movie", GetReviewsByMovieName)
+
+	server := http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+	defer server.Close()
+	go server.ListenAndServe()
 
 	// Cleanup
 	sigch := make(chan os.Signal, 1)
