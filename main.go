@@ -9,6 +9,8 @@ import (
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/joho/godotenv"
 	"google.golang.org/api/option"
@@ -184,15 +186,16 @@ func main() {
 	}
 
 	// Webserver
-	mux := http.NewServeMux()
+	router := chi.NewRouter()
+	router.Use(middleware.Logger)
 
-	mux.HandleFunc("/myreviews", GetReviewsByAuthorID)
-	mux.HandleFunc("/allmovies", GetAllMovies)
-	mux.HandleFunc("/movie", GetReviewsByMovieName)
+	router.Get("/myreviews", GetReviewsByAuthorID)
+	router.Get("/allmovies", GetAllMovies)
+	router.Get("/movie", GetReviewsByMovieName)
 
 	server := http.Server{
 		Addr:    ":8080",
-		Handler: mux,
+		Handler: router,
 	}
 	defer server.Close()
 	go server.ListenAndServe()
