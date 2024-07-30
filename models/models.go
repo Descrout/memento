@@ -36,6 +36,11 @@ type ReviewResponse struct {
 }
 
 type MovieResponse struct {
+	MovieName    string  `json:"movie_name"`
+	AverageScore float64 `json:"average_score"`
+}
+
+type MovieWithReviewsResponse struct {
 	MovieName    string           `json:"movie_name"`
 	AverageScore float64          `json:"average_score"`
 	Reviews      []ReviewResponse `json:"reviews"`
@@ -94,8 +99,14 @@ type ChatGPTChatResponse struct {
 }
 
 type AddReviewRequest struct {
-	UserID    string  `json:"user_id"`
+	AuthorID  string  `json:"author_id"`
 	MovieName string  `json:"movie"`
-	Rating    float64 `json:"rating"`
+	Score     float64 `json:"score"`
 	Comment   string  `json:"comment"`
+}
+
+type ExamineRequest struct {
+	AuthorID  string `json:"author_id"`
+	MovieName string `json:"movie_name"`
+	Personal  bool   `json:"personal"`
 }

@@ -198,6 +198,10 @@ func main() {
 	router.Get("/myreviews", GetReviewsByAuthorID)
 	router.Get("/allmovies", GetAllMovies)
 	router.Get("/movie", GetReviewsByMovieName)
+	router.Post("/review", AddReview)
+	router.Delete("/review", DeleteReview)
+	router.Get("/examine", ExamineMovie)
+	router.Get("/recommend", RecommendMovie)
 
 	// router.Group(func(r chi.Router) {
 	// 	router.Get("/myreviews", GetReviewsByAuthorID)
