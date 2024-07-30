@@ -204,7 +204,12 @@ func (s *Store) DeleteMovie(movie string) error {
 			return fmt.Errorf("this movie did not exists")
 		}
 
-		return tx.DeleteBucket([]byte(movie))
+		// Delete the movie bucket
+		if err := moviesBucket.DeleteBucket([]byte(movie)); err != nil {
+			return err
+		}
+
+		return nil
 	})
 }
 
