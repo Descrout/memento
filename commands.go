@@ -579,7 +579,7 @@ func SimilarUsersCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		batcher := utils.NewBatcher(2000)
-		batcher.Add(fmt.Sprintf("# Similar users to ``%s``\n", author.Username))
+		batcher.Add(fmt.Sprintf("# Similar users to ``%s``\n", author.GlobalName))
 
 		for j, similar := range similars {
 			user, err := s.User(similar.UserID)

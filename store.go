@@ -64,8 +64,13 @@ func (s *Store) AddReview(movieName string, review *models.Review) error {
 }
 
 func (s *Store) GetMovies() ([]string, []float64, error) {
-	movies := []string{}
-	averages := []float64{}
+	type MovieAverage struct {
+		Name    string
+		Average float64
+	}
+
+	var movieAverages []MovieAverage
+
 	err := s.db.View(func(tx *bolt.Tx) error {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
 
@@ -87,12 +92,16 @@ func (s *Store) GetMovies() ([]string, []float64, error) {
 			if err != nil {
 				return err
 			}
+
 			var avg float64 = 0
 			if count > 0 {
 				avg = totalScore / float64(count)
 			}
-			averages = append(averages, avg)
-			movies = append(movies, string(k))
+
+			movieAverages = append(movieAverages, MovieAverage{
+				Name:    string(k),
+				Average: avg,
+			})
 
 			return nil
 		})
@@ -107,13 +116,19 @@ func (s *Store) GetMovies() ([]string, []float64, error) {
 		return nil, nil, err
 	}
 
-	sort.Slice(movies, func(i, j int) bool {
-		return averages[i] > averages[j]
+	// Sort movieAverages by average score in descending order
+	sort.Slice(movieAverages, func(i, j int) bool {
+		return movieAverages[i].Average > movieAverages[j].Average
 	})
 
-	sort.Slice(averages, func(i, j int) bool {
-		return averages[i] > averages[j]
-	})
+	// Separate sorted movies and averages
+	movies := make([]string, len(movieAverages))
+	averages := make([]float64, len(movieAverages))
+
+	for i, ma := range movieAverages {
+		movies[i] = ma.Name
+		averages[i] = ma.Average
+	}
 
 	return movies, averages, nil
 }
@@ -267,8 +282,12 @@ func (s *Store) ClearAllData() error {
 }
 
 func (s *Store) GetReviewsByUser(userID string) ([]*models.Review, []string, error) {
-	reviews := []*models.Review{}
-	movieNames := []string{}
+	type ReviewWithMovie struct {
+		Review    *models.Review
+		MovieName string
+	}
+
+	var reviewsWithMovies []ReviewWithMovie
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
@@ -285,11 +304,13 @@ func (s *Store) GetReviewsByUser(userID string) ([]*models.Review, []string, err
 
 			var review models.Review
 			if err := json.Unmarshal(reviewValue, &review); err != nil {
-				return nil
+				return err
 			}
 
-			reviews = append(reviews, &review)
-			movieNames = append(movieNames, string(k))
+			reviewsWithMovies = append(reviewsWithMovies, ReviewWithMovie{
+				Review:    &review,
+				MovieName: string(k),
+			})
 
 			return nil
 		})
@@ -299,13 +320,19 @@ func (s *Store) GetReviewsByUser(userID string) ([]*models.Review, []string, err
 		return nil, nil, err
 	}
 
-	sort.Slice(movieNames, func(i, j int) bool {
-		return reviews[i].Score > reviews[j].Score
+	// Sort by review score in descending order
+	sort.Slice(reviewsWithMovies, func(i, j int) bool {
+		return reviewsWithMovies[i].Review.Score > reviewsWithMovies[j].Review.Score
 	})
 
-	sort.Slice(reviews, func(i, j int) bool {
-		return reviews[i].Score > reviews[j].Score
-	})
+	// Separate sorted reviews and movie names
+	reviews := make([]*models.Review, len(reviewsWithMovies))
+	movieNames := make([]string, len(reviewsWithMovies))
+
+	for i, rm := range reviewsWithMovies {
+		reviews[i] = rm.Review
+		movieNames[i] = rm.MovieName
+	}
 
 	return reviews, movieNames, nil
 }
