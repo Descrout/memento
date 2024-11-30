@@ -4,24 +4,22 @@ import (
 	"context"
 	"log"
 	"memento/utils"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/joho/godotenv"
 	"google.golang.org/api/option"
 )
 
 var (
-	store    *Store
-	minVal   = float64(1)
-	commands = []*discordgo.ApplicationCommand{
+	store      *Store
+	minVal     = float64(1)
+	minValZero = float64(0)
+	commands   = []*discordgo.ApplicationCommand{
 		{
 			Name:        "review",
 			Description: "Set a review for a movie.",
@@ -65,17 +63,67 @@ var (
 					Required:     true,
 					Autocomplete: true,
 				},
+				{
+					Name:         "top",
+					Description:  "Limit the result count.",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minVal,
+				},
 			},
 		},
 		{
 			Name:        "myreviews",
 			Description: "Get the list of your reviews.",
 			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "top",
+					Description:  "Limit the result count.",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minVal,
+				},
+			},
+		},
+		{
+			Name:        "getreviews",
+			Description: "Get the list of a specific user reviews.",
+			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "user",
+					Description:  "Select a user",
+					Type:         discordgo.ApplicationCommandOptionUser,
+					Required:     true,
+					Autocomplete: true,
+				},
+				{
+					Name:         "top",
+					Description:  "Limit the result count.",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minVal,
+				},
+			},
 		},
 		{
 			Name:        "allmovies",
 			Description: "Get the all the movies you have watched.",
 			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "top",
+					Description:  "Limit the result count.",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minVal,
+				},
+			},
 		},
 		{
 			Name:        "recommend",
@@ -124,19 +172,83 @@ var (
 				},
 			},
 		},
+		{
+			Name:        "disconnect",
+			Description: "After some time, disconnects you from a voice channel in 'this' server.",
+			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "hours",
+					Description:  "Hours",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minValZero,
+				},
+				{
+					Name:         "minutes",
+					Description:  "Minutes",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minValZero,
+				},
+				{
+					Name:         "seconds",
+					Description:  "Seconds",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minValZero,
+				},
+			},
+		},
+		{
+			Name:        "cancel",
+			Description: "Cancels your disconnect request.",
+			Type:        discordgo.ChatApplicationCommand,
+		},
+		{
+			Name:        "similarusers",
+			Description: "Get the list of similar users for a specific user.",
+			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:         "user",
+					Description:  "Select a user",
+					Type:         discordgo.ApplicationCommandOptionUser,
+					Required:     true,
+					Autocomplete: true,
+				},
+				{
+					Name:         "top",
+					Description:  "Limit the result count.",
+					Type:         discordgo.ApplicationCommandOptionInteger,
+					Required:     false,
+					Autocomplete: false,
+					MinValue:     &minVal,
+				},
+			},
+		},
 	}
 
 	commandFuncs = map[string]CommandFunc{
-		"review":    ReviewCommand,
-		"movie":     MovieCommand,
-		"allmovies": GetMoviesCommand,
-		"delete":    DeleteCommand,
-		"examine":   ExamineCommand,
-		"myreviews": MyReviewsCommand,
-		"recommend": RecommendCommand,
+		"review":       ReviewCommand,
+		"movie":        MovieCommand,
+		"allmovies":    GetMoviesCommand,
+		"delete":       DeleteCommand,
+		"examine":      ExamineCommand,
+		"myreviews":    MyReviewsCommand,
+		"getreviews":   GetReviewsCommand,
+		"recommend":    RecommendCommand,
+		"disconnect":   DisconnectCommand,
+		"cancel":       CancelCommand,
+		"similarusers": SimilarUsersCommand,
 	}
 
 	debouncers = NewMutexMap[string, utils.DebounceFunc]()
+
+	disconnectTimers = NewMutexMap[string, *time.Timer]()
 
 	geminiClient *genai.Client
 )
@@ -188,37 +300,25 @@ func main() {
 	}
 
 	// Webserver
-	router := chi.NewRouter()
-	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-	router.Use(middleware.Timeout(60 * time.Second))
+	// router := chi.NewRouter()
+	// router.Use(middleware.RequestID)
+	// router.Use(middleware.RealIP)
+	// router.Use(middleware.Logger)
+	// router.Use(middleware.Recoverer)
+	// router.Use(middleware.Timeout(60 * time.Second))
 
-	router.Get("/myreviews", GetReviewsByAuthorID)
-	router.Get("/allmovies", GetAllMovies)
-	router.Get("/movie", GetReviewsByMovieName)
+	// router.Get("/myreviews", GetReviewsByAuthorID)
+	// router.Get("/allmovies", GetAllMovies)
+	// router.Get("/movie", GetReviewsByMovieName)
 
-	// router.Group(func(r chi.Router) {
-	// 	router.Get("/myreviews", GetReviewsByAuthorID)
-	// 	router.Get("/allmovies", GetAllMovies)
-	// 	router.Get("/movie", GetReviewsByMovieName)
-	// })
+	// router.Get("/allmovies", GetAllMovies)
 
-	// router.Route("/movie", func(r chi.Router) {
-	// 	router.Get("/review", GetReviewsByAuthorID)
-	// 	router.Get("/all", GetAllMovies)
-	// 	router.Get("/", GetReviewsByMovieName)
-	// })
-
-	router.Get("/allmovies", GetAllMovies)
-
-	server := http.Server{
-		Addr:    ":8080",
-		Handler: router,
-	}
-	defer server.Close()
-	go server.ListenAndServe()
+	// server := http.Server{
+	// 	Addr:    ":8080",
+	// 	Handler: router,
+	// }
+	// defer server.Close()
+	// go server.ListenAndServe()
 
 	// Cleanup
 	sigch := make(chan os.Signal, 1)

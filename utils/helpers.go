@@ -17,6 +17,28 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+func GetTop(options []*discordgo.ApplicationCommandInteractionDataOption) int64 {
+	for _, opt := range options {
+		if opt.Name == "top" {
+			return opt.IntValue()
+		}
+	}
+
+	return 0
+}
+
+func GetDurationFromStr(str string) time.Duration {
+	if str == "seconds" {
+		return time.Second
+	} else if str == "minutes" {
+		return time.Minute
+	} else if str == "hours" {
+		return time.Hour
+	}
+
+	return 0
+}
+
 func InteractionAuthor(i *discordgo.Interaction) *discordgo.User {
 	if i.Member != nil {
 		return i.Member.User
@@ -71,7 +93,7 @@ func SearchMovies(query string, searchCount int) ([]string, error) {
 	for _, movie := range tmdbResponse.Results {
 		if movie.VoteCount >= 100 && !movie.Adult {
 			releaseDate := strings.Split(movie.ReleaseDate, "-")[0]
-			titlesWithDetails = append(titlesWithDetails, fmt.Sprintf("%s (%s) ", movie.Title, releaseDate))
+			titlesWithDetails = append(titlesWithDetails, fmt.Sprintf("%s (%s)", movie.Title, releaseDate))
 			if len(titlesWithDetails) >= searchCount {
 				break
 			}
@@ -223,4 +245,20 @@ func MinElement[T Number](list []T) T {
 	}
 
 	return max
+}
+
+func FilterUnique[T comparable](list []T) []T {
+	// Create a map to track seen elements
+	seen := make(map[T]bool)
+	var result []T
+
+	// Iterate through the list and add only unique elements to the result
+	for _, value := range list {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+
+	return result
 }

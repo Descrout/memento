@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"memento/models"
+	"sort"
 	"strings"
 
 	"github.com/boltdb/bolt"
@@ -105,6 +107,14 @@ func (s *Store) GetMovies() ([]string, []float64, error) {
 		return nil, nil, err
 	}
 
+	sort.Slice(movies, func(i, j int) bool {
+		return averages[i] > averages[j]
+	})
+
+	sort.Slice(averages, func(i, j int) bool {
+		return averages[i] > averages[j]
+	})
+
 	return movies, averages, nil
 }
 
@@ -116,7 +126,7 @@ func (s *Store) SearchMovies(search string) ([]string, error) {
 		moviesBucket := tx.Bucket(s.moviesBucketKey)
 
 		err := moviesBucket.ForEach(func(k, v []byte) error {
-			mv := string(k)
+			mv := strings.TrimSpace(string(k))
 
 			if strings.Contains(strings.ToLower(mv), search) && len(movies) < 8 {
 				movies = append(movies, mv)
@@ -171,6 +181,10 @@ func (s *Store) GetReviews(movie string) ([]*models.Review, float64, error) {
 	if count > 0 {
 		average = totalScore / count
 	}
+
+	sort.Slice(reviews, func(i, j int) bool {
+		return reviews[i].Score > reviews[j].Score
+	})
 
 	return reviews, average, nil
 }
@@ -280,39 +294,120 @@ func (s *Store) GetReviewsByUser(userID string) ([]*models.Review, []string, err
 		return nil, nil, err
 	}
 
+	sort.Slice(movieNames, func(i, j int) bool {
+		return reviews[i].Score > reviews[j].Score
+	})
+
+	sort.Slice(reviews, func(i, j int) bool {
+		return reviews[i].Score > reviews[j].Score
+	})
+
 	return reviews, movieNames, nil
 }
 
-// func (s *Store) GetMovieNameByReview(review *Review) (string, error) {
-// 	var movieName string
+func (s *Store) GetUserSimilarities(userID string) ([]*models.UserSimilarity, error) {
+	// First, get the current user's reviews
+	currentUserReviews, currentUserMovies, err := s.GetReviewsByUser(userID)
+	if err != nil {
+		return nil, err
+	}
 
-// 	err := s.db.View(func(tx *bolt.Tx) error {
-// 		moviesBucket := tx.Bucket(s.moviesBucketKey)
+	// If the current user has no reviews, return empty list
+	if len(currentUserReviews) == 0 {
+		return []*models.UserSimilarity{}, nil
+	}
 
-// 		return moviesBucket.ForEach(func(k, v []byte) error {
-// 			movieBucket := moviesBucket.Bucket(k)
-// 			if movieBucket == nil {
-// 				return nil
-// 			}
+	// Map to store other users' reviews
+	userReviewMap := make(map[string][]*models.UserMovieReview)
 
-// 			return movieBucket.ForEach(func(reviewKey, reviewValue []byte) error {
-// 				var r Review
-// 				if err := json.Unmarshal(reviewValue, &r); err != nil {
-// 					return err
-// 				}
+	// Collect reviews from all users
+	err = s.db.View(func(tx *bolt.Tx) error {
+		moviesBucket := tx.Bucket(s.moviesBucketKey)
+		return moviesBucket.ForEach(func(k, v []byte) error {
+			movieBucket := moviesBucket.Bucket(k)
+			movieName := string(k)
 
-// 				if r.AuthorID == review.AuthorID && r.Comment == review.Comment && r.Score == review.Score {
-// 					movieName = string(k)
-// 					return nil
-// 				}
-// 				return nil
-// 			})
-// 		})
-// 	})
+			return movieBucket.ForEach(func(userKey, reviewData []byte) error {
+				// Skip the current user
+				if string(userKey) == userID {
+					return nil
+				}
 
-// 	if err != nil {
-// 		return "", err
-// 	}
+				review := &models.Review{}
+				if err := json.Unmarshal(reviewData, &review); err != nil {
+					return err
+				}
 
-// 	return movieName, nil
-// }
+				userReviewMap[string(userKey)] = append(userReviewMap[string(userKey)], &models.UserMovieReview{
+					MovieName: movieName,
+					Score:     review.Score,
+				})
+				return nil
+			})
+		})
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate similarities
+	similarities := []*models.UserSimilarity{}
+	for otherUserID, otherUserReviews := range userReviewMap {
+		similarity := calculateCosineSimilarity(currentUserReviews, currentUserMovies, otherUserReviews)
+		similarities = append(similarities, &models.UserSimilarity{
+			UserID:     otherUserID,
+			Similarity: similarity,
+		})
+	}
+
+	// Sort similarities in descending order
+	sort.Slice(similarities, func(i, j int) bool {
+		return similarities[i].Similarity > similarities[j].Similarity
+	})
+
+	return similarities, nil
+}
+
+// calculateCosineSimilarity calculates the cosine similarity between two users' reviews
+func calculateCosineSimilarity(currentUserReviews []*models.Review, currentUserMovies []string, otherUserReviews []*models.UserMovieReview) float64 {
+	// Create a map of current user's reviews by movie
+	currentUserReviewMap := make(map[string]float64)
+	for i, movie := range currentUserMovies {
+		currentUserReviewMap[movie] = currentUserReviews[i].Score
+	}
+
+	// Calculate dot product and magnitudes
+	dotProduct := float64(0)
+	currentUserMagnitude := float64(0)
+	otherUserMagnitude := float64(0)
+
+	// Track common movies between users
+	commonMovies := 0
+
+	// Calculate similarities for common movies
+	for _, otherReview := range otherUserReviews {
+		currentUserScore, exists := currentUserReviewMap[otherReview.MovieName]
+		if exists {
+			dotProduct += currentUserScore * otherReview.Score
+			currentUserMagnitude += currentUserScore * currentUserScore
+			otherUserMagnitude += otherReview.Score * otherReview.Score
+			commonMovies++
+		}
+	}
+
+	// If no common movies, return 0 similarity
+	if commonMovies == 0 {
+		return 0
+	}
+
+	// Avoid division by zero
+	if currentUserMagnitude == 0 || otherUserMagnitude == 0 {
+		return 0
+	}
+
+	// Calculate cosine similarity
+	similarity := dotProduct / (math.Sqrt(currentUserMagnitude) * math.Sqrt(otherUserMagnitude))
+
+	return similarity
+}

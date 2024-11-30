@@ -99,3 +99,15 @@ type AddReviewRequest struct {
 	Rating    float64 `json:"rating"`
 	Comment   string  `json:"comment"`
 }
+
+// UserMovieReview represents a user's review for a specific movie
+type UserMovieReview struct {
+	MovieName string
+	Score     float64
+}
+
+// UserSimilarity represents the similarity score between users
+type UserSimilarity struct {
+	UserID     string  `json:"user_id"`
+	Similarity float64 `json:"similarity"`
+}

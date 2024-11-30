@@ -23,6 +23,10 @@ func (m *MutexMap[K, V]) Set(key K, value V) {
 	m.Unlock()
 }
 
+func (m *MutexMap[K, V]) SetNonBlocking(key K, value V) {
+	m.data[key] = value
+}
+
 func (m *MutexMap[K, V]) SetIfNotExists(key K, value V) V {
 	m.Lock()
 	defer m.Unlock()
@@ -67,6 +71,10 @@ func (m *MutexMap[K, V]) Delete(key K) {
 	m.Lock()
 	delete(m.data, key)
 	m.Unlock()
+}
+
+func (m *MutexMap[K, V]) DeleteNonBlocking(key K) {
+	delete(m.data, key)
 }
 
 func (m *MutexMap[K, V]) Filter(keep func(K, V) bool) []K {

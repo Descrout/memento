@@ -2,14 +2,25 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"memento/models"
 	"memento/utils"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 type CommandFunc = func(s *discordgo.Session, i *discordgo.InteractionCreate)
+
+func RespondToInteraction(s *discordgo.Session, interaction *discordgo.Interaction, message string) {
+	s.InteractionRespond(interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: message,
+		},
+	})
+}
 
 func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
@@ -27,22 +38,11 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Score:    score,
 			Comment:  comment,
 		}); err != nil {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("Review could not be added: %s", err.Error()),
-				},
-			})
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("Review could not be added: %s", err.Error()))
 			return
 		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("**%s** reviewed ``%s`` ``%.1f``\n```%s```", author.Username, movieName, score, comment),
-			},
-		})
-
+		RespondToInteraction(s, i.Interaction, fmt.Sprintf("**%s** reviewed ``%s`` ``%.2f``\n```%s```", author.Username, movieName, score, comment))
 		break
 	case discordgo.InteractionApplicationCommandAutocomplete:
 		data := i.ApplicationCommandData()
@@ -69,6 +69,8 @@ func ReviewCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				}
 			}
 
+			names = utils.FilterUnique(names)
+
 			choices := []*discordgo.ApplicationCommandOptionChoice{}
 			for _, name := range names {
 				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
@@ -91,36 +93,30 @@ func MovieCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
 		data := i.ApplicationCommandData()
+		top := utils.GetTop(data.Options)
 
 		movieName := strings.TrimSpace(data.Options[0].StringValue())
 
 		reviews, avg, err := store.GetReviews(movieName)
 		if err != nil {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("Reviews could not be fetched: %s", err.Error()),
-				},
-			})
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("Reviews could not be fetched: %s", err.Error()))
 			return
 		}
 
-		result := fmt.Sprintf("# %s ``[%.1f]``\n", movieName, avg)
-
-		for _, review := range reviews {
+		batcher := utils.NewBatcher(2000)
+		batcher.Add(fmt.Sprintf("# %s ``[%.2f]``\n", movieName, avg))
+		for j, review := range reviews {
 			user, err := s.User(review.AuthorID)
 			if err != nil {
 				continue
 			}
-			result += fmt.Sprintf("- **%s** **``(%.1f)``** - ``\"%s\"``\n", user.Username, review.Score, review.Comment)
+			batcher.Add(fmt.Sprintf("%d. **%s** **``(%.2f)``** - ``\"%s\"``\n", j+1, user.Username, review.Score, review.Comment))
+			if top != 0 && j+1 >= int(top) {
+				break
+			}
 		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: result,
-			},
-		})
+		batcher.Send(s, i)
 	case discordgo.InteractionApplicationCommandAutocomplete:
 		data := i.ApplicationCommandData()
 		if !data.Options[0].Focused {
@@ -156,29 +152,25 @@ func MovieCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 func GetMoviesCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
+		top := utils.GetTop(data.Options)
 		movies, averages, err := store.GetMovies()
 		if err != nil {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("Movies could not be fetched: %s", err.Error()),
-				},
-			})
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("Movies could not be fetched: %s", err.Error()))
 			return
 		}
 
-		result := ""
+		batcher := utils.NewBatcher(2000)
 
-		for i, movieName := range movies {
-			result += fmt.Sprintf("- **%s** ``%.1f``\n", movieName, averages[i])
+		for j, movieName := range movies {
+			batcher.Add(fmt.Sprintf("%d. **%s** ``%.2f``\n", j+1, movieName, averages[j]))
+
+			if top != 0 && j+1 >= int(top) {
+				break
+			}
 		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: result,
-			},
-		})
+		batcher.Send(s, i)
 	}
 }
 
@@ -192,12 +184,7 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		err := store.DeleteReview(movieName, author.ID)
 		if err != nil {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("Review could not be deleted: %s", err.Error()),
-				},
-			})
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("Review could not be deleted: %s", err.Error()))
 			return
 		}
 
@@ -215,12 +202,7 @@ func DeleteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			result += "\nMovie has been deleted because no review left."
 		}
 
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: result,
-			},
-		})
+		RespondToInteraction(s, i.Interaction, result)
 	case discordgo.InteractionApplicationCommandAutocomplete:
 		data := i.ApplicationCommandData()
 		if !data.Options[0].Focused {
@@ -265,7 +247,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		})
-		requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm? Sever miyim? İzlenir mi?\n\nListe:\n")
+		requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bu puanlardan yola çıkarak sence " + movieName + " filmi hakkında ne düşünürüm? 2000 karakterden az cevap ver lütfen.\n\nListe:\n")
 
 		if personal {
 			reviews, names, err := store.GetReviewsByUser(utils.InteractionAuthor(i.Interaction).ID)
@@ -276,7 +258,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				return
 			}
 			for i, review := range reviews {
-				requestText.WriteString(fmt.Sprintf("%s - Score: %.1f\n", names[i], review.Score))
+				requestText.WriteString(fmt.Sprintf("%s - Score: %.2f\n", names[i], review.Score))
 			}
 		} else {
 			movies, averages, err := store.GetMovies()
@@ -287,7 +269,7 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				return
 			}
 			for i, movie := range movies {
-				requestText.WriteString(fmt.Sprintf("%s - Average Score: %.1f\n", movie, averages[i]))
+				requestText.WriteString(fmt.Sprintf("%s - Average Score: %.2f\n", movie, averages[i]))
 			}
 		}
 
@@ -327,6 +309,8 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				}
 			}
 
+			names = utils.FilterUnique(names)
+
 			choices := []*discordgo.ApplicationCommandOptionChoice{}
 			for _, name := range names {
 				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
@@ -346,39 +330,34 @@ func ExamineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func MyReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	switch i.Type {
-	case discordgo.InteractionApplicationCommand:
-		author := utils.InteractionAuthor(i.Interaction)
-		reviews, names, err := store.GetReviewsByUser(author.ID)
-		if err != nil || len(reviews) == 0 {
-			responseMessage := "You haven't reviewed any movies yet."
-			if err != nil {
-				responseMessage = fmt.Sprintf("Reviews could not be fetched: %s", err.Error())
-			}
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: responseMessage,
-				},
-			})
-			return
-		}
-
-		var result strings.Builder
-
-		result.WriteString(fmt.Sprintf("# %s ``[%.1f]``\n", author.Username, utils.AverageScore(reviews)))
-
-		for i, review := range reviews {
-			result.WriteString(fmt.Sprintf("- **%s** **``(%.1f)``** - ``\"%s\"``\n", names[i], review.Score, review.Comment))
-		}
-
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: result.String(),
-			},
-		})
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
 	}
+	data := i.ApplicationCommandData()
+	top := utils.GetTop(data.Options)
+	author := utils.InteractionAuthor(i.Interaction)
+	reviews, names, err := store.GetReviewsByUser(author.ID)
+	if err != nil {
+		RespondToInteraction(s, i.Interaction, fmt.Sprintf("Failed to fetch reviews: %s", err.Error()))
+		return
+	}
+
+	if len(reviews) == 0 {
+		RespondToInteraction(s, i.Interaction, "You haven't reviewed any movies yet.")
+		return
+	}
+
+	batcher := utils.NewBatcher(2000)
+	batcher.Add(fmt.Sprintf("# %s ``[%.2f]``\n", author.Username, utils.AverageScore(reviews)))
+
+	for j, review := range reviews {
+		batcher.Add(fmt.Sprintf("%d. **%s** **``(%.2f)``** - ``\"%s\"``\n", j+1, names[j], review.Score, review.Comment))
+		if top != 0 && j+1 >= int(top) {
+			break
+		}
+	}
+
+	batcher.Send(s, i)
 }
 
 func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -394,7 +373,7 @@ func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		})
 
-		requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bunlara göre bana beğenebileceğim 3 film öner:\n\n")
+		requestText.WriteString("Sana film listesi ve onlara verdiğim puanları vereceğim. Bunlara göre bana beğenebileceğim 3 film öner. 2000 karakterden az cevap ver lütfen. Liste:\n\n")
 
 		if personal {
 			reviews, names, err := store.GetReviewsByUser(author.ID)
@@ -410,7 +389,7 @@ func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			}
 
 			for i, review := range reviews {
-				requestText.WriteString(fmt.Sprintf("%s - Score: %.1f\n", names[i], review.Score))
+				requestText.WriteString(fmt.Sprintf("%s - Score: %.2f\n", names[i], review.Score))
 			}
 		} else {
 			movies, averages, err := store.GetMovies()
@@ -421,7 +400,7 @@ func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				return
 			}
 			for i, movie := range movies {
-				requestText.WriteString(fmt.Sprintf("%s - Average Score: %.1f\n", movie, averages[i]))
+				requestText.WriteString(fmt.Sprintf("%s - Average Score: %.2f\n", movie, averages[i]))
 			}
 		}
 
@@ -435,5 +414,225 @@ func RecommendCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Content: recommendations,
 			})
 		}
+	}
+}
+
+func GetReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
+		top := utils.GetTop(data.Options)
+		author := data.Options[0].UserValue(s)
+		reviews, names, err := store.GetReviewsByUser(author.ID)
+		if err != nil {
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("Failed to fetch reviews: %s", err.Error()))
+			return
+		}
+
+		if len(reviews) == 0 {
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("%s haven't reviewed any movies yet.", author.Username))
+			return
+		}
+
+		batcher := utils.NewBatcher(2000)
+		batcher.Add(fmt.Sprintf("# %s ``[%.2f]``\n", author.Username, utils.AverageScore(reviews)))
+
+		for j, review := range reviews {
+			batcher.Add(fmt.Sprintf("%d. **%s** **``(%.2f)``** - ``\"%s\"``\n", j+1, names[j], review.Score, review.Comment))
+
+			if top != 0 && j+1 >= int(top) {
+				break
+			}
+		}
+
+		batcher.Send(s, i)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		data := i.ApplicationCommandData()
+		if !data.Options[0].Focused {
+			return
+		}
+
+		userInput := strings.ToLower(strings.TrimSpace(data.Options[0].StringValue()))
+
+		author := utils.InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, utils.Debouncer())
+		debounce(func() {
+			members, err := s.GuildMembers(i.GuildID, "", 100)
+			if err != nil {
+				log.Println("Error fetching guild members:", err)
+				return
+			}
+
+			suggestions := []*discordgo.ApplicationCommandOptionChoice{}
+			for _, member := range members {
+				user := member.User
+				nameMatches := strings.Contains(strings.ToLower(user.Username), userInput)
+				nickMatches := strings.Contains(strings.ToLower(member.Nick), userInput)
+
+				if nameMatches || nickMatches {
+					suggestions = append(suggestions, &discordgo.ApplicationCommandOptionChoice{
+						Name:  fmt.Sprintf("%s#%s", user.Username, user.Discriminator),
+						Value: user.ID,
+					})
+				}
+
+				if len(suggestions) >= 25 {
+					break
+				}
+			}
+
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{
+					Choices: suggestions,
+				},
+			})
+		})
+	}
+}
+
+func DisconnectCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
+	}
+
+	data := i.ApplicationCommandData()
+
+	duration := time.Duration(0)
+	for _, opt := range data.Options {
+		duration += time.Duration(opt.IntValue()) * utils.GetDurationFromStr(opt.Name)
+	}
+
+	if duration == 0 {
+		RespondToInteraction(s, i.Interaction, "Duration cannot be zero.")
+		return
+	}
+
+	author := utils.InteractionAuthor(i.Interaction)
+	guildID := i.Interaction.GuildID
+	guildName := "this"
+	g, err := s.Guild(guildID)
+	if err == nil {
+		guildName = g.Name
+	}
+
+	key := fmt.Sprintf("%s|%s", author.ID, guildID)
+
+	disconnectTimers.Lock()
+
+	timerBefore := disconnectTimers.Get(key)
+	if timerBefore != nil {
+		timerBefore.Stop()
+	}
+
+	disconnectTimers.SetNonBlocking(key, time.AfterFunc(duration, func() {
+		s.GuildMemberMove(guildID, author.ID, nil)
+		disconnectTimers.Delete(key)
+	}))
+
+	disconnectTimers.Unlock()
+
+	RespondToInteraction(s, i.Interaction, fmt.Sprintf("I will disconnect you from a voice channel in **%s** server, after ``%s``", guildName, duration.String()))
+}
+
+func CancelCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
+	}
+
+	author := utils.InteractionAuthor(i.Interaction)
+	guildID := i.Interaction.GuildID
+	guildName := "this"
+	g, err := s.Guild(guildID)
+	if err == nil {
+		guildName = g.Name
+	}
+
+	key := fmt.Sprintf("%s|%s", author.ID, guildID)
+
+	timerBefore := disconnectTimers.Get(key)
+	if timerBefore != nil {
+		timerBefore.Stop()
+		disconnectTimers.Delete(key)
+		RespondToInteraction(s, i.Interaction, fmt.Sprintf("Disconnect timer successfuly cancelled for **%s** server.", guildName))
+	} else {
+		RespondToInteraction(s, i.Interaction, fmt.Sprintf("You did not set any disconnect timers on **%s** server.", guildName))
+	}
+
+}
+
+func SimilarUsersCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := i.ApplicationCommandData()
+		top := utils.GetTop(data.Options)
+		author := data.Options[0].UserValue(s)
+		similars, err := store.GetUserSimilarities(author.ID)
+		if err != nil {
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("Failed to fetch similarities: %s", err.Error()))
+			return
+		}
+
+		if len(similars) == 0 {
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("We couldn't find any similar users to %s", author.Username))
+			return
+		}
+
+		batcher := utils.NewBatcher(2000)
+		batcher.Add(fmt.Sprintf("# Similar users to ``%s``\n", author.Username))
+
+		for j, similar := range similars {
+			user, err := s.User(similar.UserID)
+			if err == nil {
+				batcher.Add(fmt.Sprintf("%d. **%s** **``(%f)``**\n", j+1, user.Username, similar.Similarity))
+			}
+			if top != 0 && j+1 >= int(top) {
+				break
+			}
+		}
+
+		batcher.Send(s, i)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		data := i.ApplicationCommandData()
+		if !data.Options[0].Focused {
+			return
+		}
+
+		userInput := strings.ToLower(strings.TrimSpace(data.Options[0].StringValue()))
+
+		author := utils.InteractionAuthor(i.Interaction)
+		debounce := debouncers.SetIfNotExists(author.ID, utils.Debouncer())
+		debounce(func() {
+			members, err := s.GuildMembers(i.GuildID, "", 100)
+			if err != nil {
+				log.Println("Error fetching guild members:", err)
+				return
+			}
+
+			suggestions := []*discordgo.ApplicationCommandOptionChoice{}
+			for _, member := range members {
+				user := member.User
+				nameMatches := strings.Contains(strings.ToLower(user.Username), userInput)
+				nickMatches := strings.Contains(strings.ToLower(member.Nick), userInput)
+
+				if nameMatches || nickMatches {
+					suggestions = append(suggestions, &discordgo.ApplicationCommandOptionChoice{
+						Name:  fmt.Sprintf("%s#%s", user.Username, user.Discriminator),
+						Value: user.ID,
+					})
+				}
+
+				if len(suggestions) >= 25 {
+					break
+				}
+			}
+
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{
+					Choices: suggestions,
+				},
+			})
+		})
 	}
 }
