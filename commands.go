@@ -466,6 +466,9 @@ func GetReviewsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			suggestions := []*discordgo.ApplicationCommandOptionChoice{}
 			for _, member := range members {
 				user := member.User
+				if user.Bot {
+					continue
+				}
 				nameMatches := strings.Contains(strings.ToLower(user.Username), userInput)
 				nickMatches := strings.Contains(strings.ToLower(member.Nick), userInput)
 
@@ -612,6 +615,9 @@ func SimilarUsersCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			suggestions := []*discordgo.ApplicationCommandOptionChoice{}
 			for _, member := range members {
 				user := member.User
+				if user.Bot {
+					continue
+				}
 				nameMatches := strings.Contains(strings.ToLower(user.Username), userInput)
 				nickMatches := strings.Contains(strings.ToLower(member.Nick), userInput)
 

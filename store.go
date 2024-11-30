@@ -365,7 +365,7 @@ func (s *Store) GetUserSimilarities(userID string) ([]*models.UserSimilarity, er
 					return nil
 				}
 
-				review := &models.Review{}
+				var review *models.Review
 				if err := json.Unmarshal(reviewData, &review); err != nil {
 					return err
 				}
@@ -386,11 +386,13 @@ func (s *Store) GetUserSimilarities(userID string) ([]*models.UserSimilarity, er
 	// Calculate similarities
 	similarities := []*models.UserSimilarity{}
 	for otherUserID, otherUserReviews := range userReviewMap {
-		similarity := calculateCosineSimilarity(currentUserReviews, currentUserMovies, otherUserReviews)
-		similarities = append(similarities, &models.UserSimilarity{
-			UserID:     otherUserID,
-			Similarity: similarity,
-		})
+		similarity := calculateImprovedSimilarity(currentUserReviews, currentUserMovies, otherUserReviews)
+		if similarity > 0 {
+			similarities = append(similarities, &models.UserSimilarity{
+				UserID:     otherUserID,
+				Similarity: similarity,
+			})
+		}
 	}
 
 	// Sort similarities in descending order
@@ -401,45 +403,72 @@ func (s *Store) GetUserSimilarities(userID string) ([]*models.UserSimilarity, er
 	return similarities, nil
 }
 
-// calculateCosineSimilarity calculates the cosine similarity between two users' reviews
-func calculateCosineSimilarity(currentUserReviews []*models.Review, currentUserMovies []string, otherUserReviews []*models.UserMovieReview) float64 {
+// calculateImprovedSimilarity provides a more nuanced similarity calculation
+func calculateImprovedSimilarity(currentUserReviews []*models.Review, currentUserMovies []string, otherUserReviews []*models.UserMovieReview) float64 {
 	// Create a map of current user's reviews by movie
 	currentUserReviewMap := make(map[string]float64)
 	for i, movie := range currentUserMovies {
 		currentUserReviewMap[movie] = currentUserReviews[i].Score
 	}
 
-	// Calculate dot product and magnitudes
-	dotProduct := float64(0)
-	currentUserMagnitude := float64(0)
-	otherUserMagnitude := float64(0)
+	// Prepare vectors for common movies
+	var currentUserVector, otherUserVector []float64
 
-	// Track common movies between users
-	commonMovies := 0
-
-	// Calculate similarities for common movies
+	// Track common movies
 	for _, otherReview := range otherUserReviews {
 		currentUserScore, exists := currentUserReviewMap[otherReview.MovieName]
 		if exists {
-			dotProduct += currentUserScore * otherReview.Score
-			currentUserMagnitude += currentUserScore * currentUserScore
-			otherUserMagnitude += otherReview.Score * otherReview.Score
-			commonMovies++
+			currentUserVector = append(currentUserVector, currentUserScore)
+			otherUserVector = append(otherUserVector, otherReview.Score)
 		}
 	}
 
-	// If no common movies, return 0 similarity
-	if commonMovies == 0 {
+	// If fewer than 2 common movies, return 0
+	if len(currentUserVector) < 2 {
 		return 0
+	}
+
+	// Calculate Pearson correlation coefficient
+	return pearsonCorrelation(currentUserVector, otherUserVector)
+}
+
+// pearsonCorrelation calculates the Pearson correlation coefficient
+func pearsonCorrelation(x, y []float64) float64 {
+	if len(x) != len(y) || len(x) == 0 {
+		return 0
+	}
+
+	// Calculate means
+	var sumX, sumY float64
+	for i := range x {
+		sumX += x[i]
+		sumY += y[i]
+	}
+	meanX := sumX / float64(len(x))
+	meanY := sumY / float64(len(y))
+
+	// Calculate covariance and standard deviations
+	var covariance, varX, varY float64
+	for i := range x {
+		diffX := x[i] - meanX
+		diffY := y[i] - meanY
+		covariance += diffX * diffY
+		varX += diffX * diffX
+		varY += diffY * diffY
 	}
 
 	// Avoid division by zero
-	if currentUserMagnitude == 0 || otherUserMagnitude == 0 {
+	if varX == 0 || varY == 0 {
 		return 0
 	}
 
-	// Calculate cosine similarity
-	similarity := dotProduct / (math.Sqrt(currentUserMagnitude) * math.Sqrt(otherUserMagnitude))
+	// Calculate Pearson correlation
+	correlation := covariance / (math.Sqrt(varX) * math.Sqrt(varY))
 
-	return similarity
+	// Ensure correlation is between -1 and 1
+	if math.IsNaN(correlation) {
+		return 0
+	}
+
+	return correlation
 }
