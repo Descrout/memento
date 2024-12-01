@@ -577,7 +577,7 @@ func SimilarUsersCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		if len(similars) == 0 {
-			RespondToInteraction(s, i.Interaction, fmt.Sprintf("We couldn't find any similar users to %s", author.Username))
+			RespondToInteraction(s, i.Interaction, fmt.Sprintf("We couldn't find any similar users to %s", author.GlobalName))
 			return
 		}
 

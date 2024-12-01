@@ -429,14 +429,16 @@ func calculateImprovedSimilarity(currentUserReviews []*models.Review, currentUse
 	}
 
 	// Calculate Euclidean Distance correlation
-	return 1 / (1 + euclideanDistance(currentUserVector, otherUserVector))
+	//return 1 / (1 + euclideanDistance(currentUserVector, otherUserVector))
+	return gaussianSimilarity(currentUserVector, otherUserVector, 5)
+}
+
+func gaussianSimilarity(x, y []float64, sigma float64) float64 {
+	distance := euclideanDistance(x, y)
+	return math.Exp(-math.Pow(distance, 2) / (2 * math.Pow(sigma, 2)))
 }
 
 func euclideanDistance(x, y []float64) float64 {
-	if len(x) != len(y) {
-		return math.Inf(1) // Return infinity for invalid input
-	}
-
 	var sum float64
 	for i := range x {
 		diff := x[i] - y[i]
