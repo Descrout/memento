@@ -428,47 +428,19 @@ func calculateImprovedSimilarity(currentUserReviews []*models.Review, currentUse
 		return 0
 	}
 
-	// Calculate Pearson correlation coefficient
-	return pearsonCorrelation(currentUserVector, otherUserVector)
+	// Calculate Euclidean Distance correlation
+	return 1 / (1 + euclideanDistance(currentUserVector, otherUserVector))
 }
 
-// pearsonCorrelation calculates the Pearson correlation coefficient
-func pearsonCorrelation(x, y []float64) float64 {
-	if len(x) != len(y) || len(x) == 0 {
-		return 0
+func euclideanDistance(x, y []float64) float64 {
+	if len(x) != len(y) {
+		return math.Inf(1) // Return infinity for invalid input
 	}
 
-	// Calculate means
-	var sumX, sumY float64
+	var sum float64
 	for i := range x {
-		sumX += x[i]
-		sumY += y[i]
+		diff := x[i] - y[i]
+		sum += diff * diff
 	}
-	meanX := sumX / float64(len(x))
-	meanY := sumY / float64(len(y))
-
-	// Calculate covariance and standard deviations
-	var covariance, varX, varY float64
-	for i := range x {
-		diffX := x[i] - meanX
-		diffY := y[i] - meanY
-		covariance += diffX * diffY
-		varX += diffX * diffX
-		varY += diffY * diffY
-	}
-
-	// Avoid division by zero
-	if varX == 0 || varY == 0 {
-		return 0
-	}
-
-	// Calculate Pearson correlation
-	correlation := covariance / (math.Sqrt(varX) * math.Sqrt(varY))
-
-	// Ensure correlation is between -1 and 1
-	if math.IsNaN(correlation) {
-		return 0
-	}
-
-	return correlation
+	return math.Sqrt(sum)
 }
